@@ -54,3 +54,26 @@ def test_count_excluded_users(spark):
     df = spark.createDataFrame(rows, SCHEMA)
 
     assert count_excluded_users(df, min_ratings=5) == 1
+
+
+def test_split_is_deterministic_when_timestamps_tie(spark):
+    """Tie-break theo movieId phải cho kết quả giống hệt nhau qua nhiều lần chạy.
+
+    MovieLens có rất nhiều user chấm hàng loạt phim trong cùng một phiên, nên
+    trùng timestamp là chuyện thường. Thiếu tie-break, Spark tự do sắp xếp các
+    dòng trùng khác nhau ở mỗi lần chạy, và cùng một rating có thể rơi vào
+    train lần này, test lần sau — kết quả tuning ở Task 6 mất tính tái lập mà
+    không có gì báo lỗi.
+    """
+    # 10 rating, TẤT CẢ cùng timestamp
+    rows = [(7, movie_id, 4.0, 5000) for movie_id in range(1, 11)]
+    df = spark.createDataFrame(rows, SCHEMA)
+
+    first = {r["movieId"]: r["split"] for r in add_split_column(df).collect()}
+    second = {r["movieId"]: r["split"] for r in add_split_column(df).collect()}
+
+    assert first == second
+    # Thứ tự do movieId quyết định, nên phân bố phải giống hệt trường hợp
+    # timestamp tăng dần: movieId nhỏ nhất vào train, lớn nhất vào test.
+    assert first[1] == "train"
+    assert first[10] == "test"
