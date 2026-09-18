@@ -1,0 +1,11 @@
+FROM spark:3.5.3-python3
+
+USER root
+
+COPY requirements-spark.txt /tmp/requirements-spark.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-spark.txt
+
+ENV PYTHONPATH=/opt/app:$PYTHONPATH
+WORKDIR /opt/app
+
+USER spark

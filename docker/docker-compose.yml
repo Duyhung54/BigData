@@ -1,0 +1,52 @@
+services:
+  spark-master:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spark
+    image: movielens-spark:latest
+    container_name: spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      PYTHONPATH: /opt/app
+    ports:
+      - "8080:8080"   # Master UI
+      - "7077:7077"   # Master RPC
+      - "4040:4040"   # Driver UI khi chạy spark-submit
+    volumes:
+      - ../data:/opt/data
+      - ../src:/opt/app/src
+      - ../tests:/opt/app/tests
+      - ../report:/opt/app/report
+
+  spark-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spark
+    image: movielens-spark:latest
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_WORKER_CORES: "${SPARK_WORKER_CORES:-3}"
+      SPARK_WORKER_MEMORY: "${SPARK_WORKER_MEMORY:-3g}"
+      PYTHONPATH: /opt/app
+    deploy:
+      replicas: ${SPARK_WORKER_REPLICAS:-2}
+    volumes:
+      - ../data:/opt/data
+      - ../src:/opt/app/src
+      - ../report:/opt/app/report
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.app
+    container_name: movielens-api
+    depends_on:
+      - spark-master
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../data:/opt/data
+      - ../serving:/opt/app/serving

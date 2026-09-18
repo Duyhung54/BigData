@@ -22,3 +22,6 @@ report/figures/*.png
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Workspace của subagent-driven-development
+.superpowers/
