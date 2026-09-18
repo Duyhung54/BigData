@@ -1,11 +1,13 @@
 """Khởi tạo SparkSession dùng chung cho mọi job."""
 import os
+from typing import Optional
+
 from pyspark.sql import SparkSession
 
 from src import config
 
 
-def get_spark(app_name: str, master: str | None = None) -> SparkSession:
+def get_spark(app_name: str, master: Optional[str] = None) -> SparkSession:
     """Tạo SparkSession và đặt checkpoint dir.
 
     Checkpoint dir bắt buộc phải có: ALS lặp nhiều vòng sinh lineage RDD rất

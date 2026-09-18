@@ -5,7 +5,20 @@ USER root
 COPY requirements-spark.txt /tmp/requirements-spark.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-spark.txt
 
-ENV PYTHONPATH=/opt/app:$PYTHONPATH
+# Image gốc không đặt PYTHONPATH trỏ vào $SPARK_HOME/python, nên chạy
+# "python3 -m pytest" (không qua spark-submit/pyspark) sẽ không import được
+# pyspark. $SPARK_HOME/python/pyspark đã giải nén sẵn nhưng py4j chỉ có dạng
+# zip với tên gắn phiên bản; tạo symlink tên cố định để PYTHONPATH không phụ
+# thuộc phiên bản py4j cụ thể của từng bản Spark.
+RUN ln -s "$SPARK_HOME"/python/lib/py4j-*-src.zip "$SPARK_HOME"/python/lib/py4j-src.zip
+
+ENV PYTHONPATH=/opt/app:/opt/spark/python:/opt/spark/python/lib/py4j-src.zip:$PYTHONPATH
 WORKDIR /opt/app
+
+# WORKDIR tạo /opt/app khi còn là root nên mặc định spark (uid 185) không ghi
+# được vào đó (ví dụ pytest tạo .pytest_cache) — các thư mục con bind-mount
+# (src/, tests/, report/) không bị ảnh hưởng vì Docker Desktop mount chúng
+# với quyền ghi sẵn.
+RUN chown spark:spark /opt/app
 
 USER spark

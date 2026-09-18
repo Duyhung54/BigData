@@ -81,6 +81,11 @@ docker compose -f docker/docker-compose.yml exec spark-master \
 Script này chạy `pytest` bên trong container `spark-master` (cần cụm đã
 `up`). Kỳ vọng: toàn bộ test PASS.
 
+> Nếu chạy từ Git Bash trên Windows (không phải WSL), MSYS có thể tự đổi
+> đường dẫn `/opt/app/tests` thành đường dẫn Windows và khiến `pytest` báo
+> "file or directory not found". Nếu gặp lỗi này, chạy
+> `MSYS_NO_PATHCONV=1 ./scripts/test.sh` hoặc chạy script từ trong WSL.
+
 ## URL
 
 - Spark Master UI: http://localhost:8080 (kỳ vọng thấy 2 worker ở trạng thái ALIVE)

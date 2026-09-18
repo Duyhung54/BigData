@@ -27,6 +27,13 @@ Mọi task đều ngầm chịu các ràng buộc sau. Giá trị chép nguyên 
 - **Frontend không có bước build** — không npm, không bundler.
 - **numpy phải < 2.0** (numpy 2.x phá vỡ interop giữa PySpark 3.5 và pandas).
 - **Script `.sh` phải có line ending LF**, kể cả khi làm việc trên Windows.
+- **Container Spark chạy Python 3.8.10** (đã kiểm chứng: `docker run --rm --entrypoint python3 spark:3.5.3-python3 --version`). Mọi code chạy trong container đó — `src/`, `tests/`, `report/` — phải tương thích Python 3.8:
+  - **Không dùng cú pháp PEP 604** `X | None`. Dùng `typing.Optional[X]`. Trên 3.8 nó ném `TypeError` ngay lúc định nghĩa hàm, tức là job chết lúc import chứ không phải lúc chạy.
+  - **Không dùng generic builtin trong annotation** (`list[int]`, `dict[str, float]`). Dùng `typing.List[int]`, `typing.Dict[str, float]`, hoặc bare `list` / `dict`.
+  - **Không dùng `Path.is_relative_to()`** (Python 3.9+). Dùng so sánh chuỗi hoặc `os.path.commonpath`.
+  - **matplotlib phải `>=3.7,<3.8`** — matplotlib 3.8 yêu cầu Python 3.9+, không có wheel cp38.
+  - Lý do không nâng Python: PySpark bắt buộc phiên bản Python của driver và executor phải khớp nhau. Cài Python mới vào image Spark làm tăng rủi ro lệch phiên bản, không đáng đổi cho một đồ án có deadline.
+  - Ngoại lệ: `serving/` chạy trên image `python:3.11-slim` riêng, nhưng vẫn viết theo chuẩn 3.8 để test của nó chạy được trong container Spark qua `scripts/test.sh`.
 
 ---
 
@@ -70,7 +77,7 @@ Mọi task đều ngầm chịu các ràng buộc sau. Giá trị chép nguyên 
 - Consumes: không có (task đầu tiên)
 - Produces:
   - `src.config` — các hằng: `DATA_ROOT: Path`, `RAW_DIR: Path`, `LAKE_DIR: Path`, `OUTPUT_DIR: Path`, `CHECKPOINT_DIR: Path`, `RESULTS_DIR: Path`, `DATASET: str`, `RELEVANCE_THRESHOLD: float = 4.0`, `TOP_K: int = 10`, `N_RECOMMENDATIONS: int = 20`, `SPLIT_TRAIN: float = 0.70`, `SPLIT_VAL: float = 0.85`, `MIN_RATINGS_PER_USER: int = 5`
-  - `src.session.get_spark(app_name: str, master: str | None = None) -> SparkSession`
+  - `src.session.get_spark(app_name: str, master: Optional[str] = None) -> SparkSession`
 
 - [ ] **Step 1: Tạo `.gitattributes` chặn CRLF cho script**
 
@@ -93,7 +100,7 @@ Không có file này, Git trên Windows sẽ đổi `.sh` sang CRLF và containe
 numpy>=1.24,<2.0
 pandas>=2.0,<3.0
 pyarrow>=14.0
-matplotlib>=3.8
+matplotlib>=3.7,<3.8
 pytest>=8.0
 ```
 
@@ -255,12 +262,14 @@ ALS_CHECKPOINT_INTERVAL = 5
 ```python
 """Khởi tạo SparkSession dùng chung cho mọi job."""
 import os
+from typing import Optional
+
 from pyspark.sql import SparkSession
 
 from src import config
 
 
-def get_spark(app_name: str, master: str | None = None) -> SparkSession:
+def get_spark(app_name: str, master: Optional[str] = None) -> SparkSession:
     """Tạo SparkSession và đặt checkpoint dir.
 
     Checkpoint dir bắt buộc phải có: ALS lặp nhiều vòng sinh lineage RDD rất
@@ -356,8 +365,10 @@ def test_spark_session_counts_rows(spark):
 
 
 def test_config_paths_are_under_data_root():
-    assert config.RATINGS_PARQUET.is_relative_to(config.DATA_ROOT)
-    assert config.MODEL_DIR.is_relative_to(config.DATA_ROOT)
+    # Không dùng Path.is_relative_to: nó chỉ có từ Python 3.9, container Spark chạy 3.8
+    root = str(config.DATA_ROOT)
+    assert str(config.RATINGS_PARQUET).startswith(root)
+    assert str(config.MODEL_DIR).startswith(root)
 
 
 def test_get_spark_sets_checkpoint_dir(spark, tmp_path, monkeypatch):
