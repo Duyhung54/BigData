@@ -11,6 +11,11 @@ from src.session import get_spark
 
 TARGET_FILE_MB = 128
 
+# Tỷ lệ nén CSV -> Parquet+Snappy, đo thực tế trên ml-latest-small: 670883/2483723 = 0.27.
+# Dùng 0.30 cho an toàn. Cần hằng số này vì số file phải quyết định TRƯỚC khi ghi,
+# mà lúc đó chưa biết dung lượng Parquet thật.
+ESTIMATED_PARQUET_RATIO = 0.30
+
 
 def read_ratings_csv(spark: SparkSession, path: str) -> DataFrame:
     return spark.read.csv(path, header=True, schema=RATINGS_SCHEMA)
@@ -26,19 +31,32 @@ def _dir_bytes(path: Path) -> int:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
 
-def _n_output_files(n_bytes: int) -> int:
-    """Gộp về các file ~128 MB.
+def _n_output_files(csv_bytes: int) -> int:
+    """Gộp về các file Parquet ~128 MB.
+
+    Chia dung lượng PARQUET ƯỚC TÍNH, không phải dung lượng CSV. Parquet+Snappy
+    chỉ còn khoảng 30% so với CSV, nên chia thẳng csv_bytes sẽ cho ra file nhỏ
+    hơn mục tiêu khoảng 3 lần — ở ml-25m là ~35 MB/file thay vì 128 MB.
 
     KHÔNG partition theo userId: 162.000 user sẽ sinh 162.000 thư mục con —
     lỗi small-files kinh điển. Mọi job phía sau đều đọc toàn bộ dữ liệu nên
     partition theo cột không đem lại lợi ích gì.
     """
-    return max(1, round(n_bytes / (TARGET_FILE_MB * 1024 * 1024)))
+    estimated_parquet_bytes = csv_bytes * ESTIMATED_PARQUET_RATIO
+    return max(1, round(estimated_parquet_bytes / (TARGET_FILE_MB * 1024 * 1024)))
 
 
 def ingest(spark: SparkSession) -> dict:
     csv_path = config.RATINGS_CSV
     csv_bytes = _dir_bytes(csv_path)
+
+    # Khởi động Spark trước khi bấm giờ bất cứ thứ gì.
+    # Không có bước này, phép đo đầu tiên (inferSchema) gánh luôn chi phí một lần
+    # của JVM, cấp executor và sinh mã Catalyst — đo trên ml-latest-small cho
+    # inferSchema 10,08s so với schema tường minh 0,35s, tức 29 lần, trong khi
+    # chi phí thật của một lượt quét thêm chỉ khoảng 2 lần. Số liệu đó đi thẳng
+    # vào báo cáo nên phải đo cho đúng.
+    spark.range(1).count()
 
     # Đo thời gian khi dùng inferSchema, để so sánh trong báo cáo
     t0 = time.perf_counter()
