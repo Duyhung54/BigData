@@ -38,7 +38,10 @@ N_RECOMMENDATIONS = 20
 
 # Lưới siêu tham số
 ALS_RANKS = [10, 50, 100]
-ALS_REG_PARAMS = [0.01, 0.1, 0.2]
+# regParam kéo tới 0.5 vì lần chạy thử trên ml-latest-small cho 0.2 thắng —
+# mà 0.2 là giá trị lớn nhất được thử, tức tối ưu nằm ở BIÊN của lưới và chưa
+# kết luận được. Thêm 0.3 và 0.5 để tối ưu nằm hẳn bên trong lưới.
+ALS_REG_PARAMS = [0.01, 0.1, 0.2, 0.3, 0.5]
 ALS_MAX_ITER = 10
 ALS_CHECKPOINT_INTERVAL = 5
 
