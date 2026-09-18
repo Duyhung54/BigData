@@ -1,0 +1,24 @@
+# Dữ liệu (tải bằng scripts/download_data.sh)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+checkpoint/
+
+# Kết quả sinh ra
+report/figures/*.png
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
