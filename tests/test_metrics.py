@@ -68,3 +68,25 @@ def test_coverage_counts_distinct_items_over_catalog():
 
 def test_coverage_of_empty_catalog_is_zero():
     assert coverage([1, 2], catalog_size=0) == 0.0
+
+
+def test_coverage_can_exceed_one_when_catalog_size_is_wrong():
+    # coverage KHÔNG bị kẹp ở 1.0: nếu catalog_size truyền vào nhỏ hơn thực tế
+    # (lỗi của bên gọi), kết quả > 1.0 là tín hiệu báo lỗi, không phải giá trị
+    # cần diễn giải như một metric hợp lệ. Kẹp về 1.0 sẽ che giấu lỗi này.
+    assert coverage([1, 2, 3], catalog_size=2) == pytest.approx(1.5)
+
+
+def test_hits_count_distinct_items_not_occurrences():
+    # Danh sách gợi ý lỡ chứa phim trùng lặp: đếm theo lần xuất hiện sẽ cho
+    # recall_at_k([1,1],{1},k=2) = 2/1 = 2.0, vượt khoảng [0,1] hợp lệ.
+    # ALS top-k không trùng lặp trong thực tế, nhưng metric này không được
+    # phép trả về giá trị vô nghĩa dù đầu vào có sai.
+    assert recall_at_k([1, 1], {1}, k=2) == pytest.approx(1.0)
+    assert precision_at_k([1, 1], {1}, k=2) == pytest.approx(0.5)
+
+
+def test_metrics_handle_negative_k():
+    assert precision_at_k([1, 2], {1}, k=-1) == 0.0
+    assert recall_at_k([1, 2], {1}, k=-1) == 0.0
+    assert ndcg_at_k([1, 2], {1}, k=-1) == 0.0

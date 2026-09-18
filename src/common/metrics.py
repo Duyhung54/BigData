@@ -11,7 +11,15 @@ from typing import Iterable, Sequence, Set
 
 
 def _hits(recommended: Sequence, relevant: Set, k: int) -> int:
-    return sum(1 for item in list(recommended)[:k] if item in relevant)
+    """Đếm số phim liên quan PHÂN BIỆT nằm trong top-k.
+
+    Đếm phân biệt chứ không đếm số lần xuất hiện: nếu danh sách gợi ý lỡ chứa
+    một phim hai lần, cách đếm theo lần xuất hiện sẽ cho recall_at_k([1,1],{1},k=2)
+    = 2/1 = 2.0, tức vượt khoảng [0,1] hợp lệ mà không có gì báo lỗi. Danh sách
+    top-k của ALS không trùng lặp, nhưng metrics này sinh số cho báo cáo nên
+    không được phép trả về giá trị vô nghĩa dù đầu vào có sai.
+    """
+    return len({item for item in list(recommended)[:k] if item in relevant})
 
 
 def precision_at_k(recommended: Sequence, relevant: Set, k: int) -> float:
@@ -64,6 +72,12 @@ def coverage(recommended_items: Iterable, catalog_size: int) -> float:
 
     Phát hiện mô hình chỉ quanh quẩn vài phim nổi tiếng: RMSE có thể rất đẹp
     trong khi coverage chỉ 2%, nghĩa là mọi user đều nhận cùng một danh sách.
+
+    Giả định đầu vào: mọi phim trong recommended_items được kỳ vọng nằm trong
+    catalog đã đếm bằng catalog_size. Kết quả > 1.0 nghĩa là bên gọi truyền
+    catalog_size sai (nhỏ hơn thực tế) — đây là lỗi của bên gọi cần sửa, KHÔNG
+    phải một giá trị metric cần diễn giải. Hàm này cố ý không kẹp về 1.0, vì
+    kẹp sẽ che giấu lỗi thay vì phơi bày nó.
     """
     if catalog_size <= 0:
         return 0.0
