@@ -1,6 +1,12 @@
 import pytest
 
-from src.jobs.evaluate import ranking_metrics, rating_metrics, relevant_items
+from src.jobs.evaluate import (
+    eligible_items,
+    ranking_metrics,
+    rating_metrics,
+    relevant_items,
+    top_k_from_scores,
+)
 
 
 def test_relevant_items_keeps_only_ratings_at_or_above_threshold(spark):
@@ -63,3 +69,30 @@ def test_rating_metrics_computes_rmse_and_mae(spark):
 
     assert result["rmse"] == pytest.approx(1.0)
     assert result["mae"] == pytest.approx(1.0)
+
+
+def test_eligible_items_keeps_only_movies_at_or_above_min_ratings(spark):
+    # movie 10: 2 lượt đánh giá, movie 11: 1 lượt -> chỉ 10 đủ điều kiện với min_ratings=2
+    train_val = spark.createDataFrame(
+        [(1, 10, 5.0), (2, 10, 4.0), (1, 11, 3.0)],
+        "userId int, movieId int, rating double",
+    )
+
+    result = {r["movieId"] for r in eligible_items(train_val, min_ratings=2).collect()}
+
+    assert result == {10}
+
+
+def test_top_k_from_scores_orders_by_prediction_desc_and_truncates_to_k(spark):
+    scored = spark.createDataFrame(
+        [
+            (1, 10, 3.0), (1, 11, 5.0), (1, 12, 4.0),
+            (2, 20, 1.0),
+        ],
+        "userId int, movieId int, prediction double",
+    )
+
+    result = {r["userId"]: r["items"] for r in top_k_from_scores(scored, k=2).collect()}
+
+    assert result[1] == [11, 12]
+    assert result[2] == [20]

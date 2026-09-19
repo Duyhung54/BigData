@@ -36,6 +36,12 @@ RELEVANCE_THRESHOLD = 4.0
 TOP_K = 10
 N_RECOMMENDATIONS = 20
 
+# Chỉ sinh gợi ý từ các phim có ít nhất ngần này lượt đánh giá trong tập huấn luyện.
+# Không có ngưỡng này, ALS gợi ý toàn phim có TRUNG VỊ 1 lượt đánh giá: factor của
+# chúng ước lượng từ đúng một quan sát nên điểm dự đoán bị đẩy lên cực trị và chiếm
+# hết top-10, khiến NDCG@10 rớt xuống 0.0003 so với 0.031 của baseline popularity.
+MIN_RATINGS_FOR_RECOMMENDATION = 20
+
 # Lưới siêu tham số
 ALS_RANKS = [10, 50, 100]
 # regParam kéo tới 0.5 vì lần chạy thử trên ml-latest-small cho 0.2 thắng —
