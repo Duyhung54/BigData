@@ -252,3 +252,39 @@ def test_server_starts_serving_once_files_appear_without_restart(tmp_path, monke
     resp = client.get("/api/stats")
     assert resp.status_code == 200
     assert resp.json()["movies_in_catalog"] == 1
+
+
+# --- Giao diện demo (Task 10) ---
+
+
+def test_root_serves_demo_ui(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    # Bố cục hai cột bắt buộc theo brief Task 10
+    assert "Lịch sử xem" in body
+    assert "Gợi ý cho bạn" in body
+    assert "Phim tương tự" in body
+    # Gọi đúng các endpoint của Task 9, không có API mới
+    assert "/recommendations" in body
+    assert "/history" in body
+    assert "/similar" in body
+    assert "/api/movies/search" in body
+    assert "/api/stats" in body
+
+
+def test_root_serves_demo_ui_even_when_data_files_missing(tmp_path, monkeypatch):
+    """Trang phải tải được (và tự báo lỗi) ngay cả khi pipeline batch chưa
+    chạy lần nào, vì static file không phụ thuộc Store (xem get_store())."""
+    api = _reload_api_with_paths(
+        monkeypatch,
+        tmp_path / "missing.sqlite",
+        tmp_path / "missing.npy",
+        tmp_path / "missing.parquet",
+    )
+    client = TestClient(api.app)
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Lịch sử xem" in resp.text

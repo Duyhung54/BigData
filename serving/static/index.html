@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gợi ý phim — MovieLens ALS</title>
+  <style>
+    :root { --bg:#faf9f7; --fg:#1a1a1a; --muted:#6b6b6b; --line:#e2e0dc; --accent:#2f6f4f; --chip-bg:#eaf1ec; --chip-fg:#2f6f4f; --err:#a33; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:24px; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+    .wrap { max-width:1000px; margin:0 auto; }
+    h1 { font-size:22px; margin:0 0 4px; }
+    .stats { color:var(--muted); font-size:13px; margin-bottom:16px; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+    input, button { font:inherit; padding:8px 12px; border:1px solid var(--line); border-radius:6px; }
+    input[type=number] { width:110px; }
+    button { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
+    button.ghost { background:#fff; color:var(--accent); }
+    .search-input { flex:1; min-width:160px; }
+    .suggested { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+    .suggested .label { color:var(--muted); font-size:12px; align-self:center; margin-right:2px; }
+    .suggested button { padding:5px 10px; font-size:12px; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:16px; }
+    @media (max-width:700px) { .cols { grid-template-columns:1fr; } }
+    .panel { background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:20px; }
+    .panel h2 { font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 10px; }
+    .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+    .chips:empty { margin-bottom:0; }
+    .chip { background:var(--chip-bg); color:var(--chip-fg); font-size:12px; padding:3px 9px; border-radius:999px; white-space:nowrap; }
+    .movie { padding:8px 0; border-bottom:1px solid var(--line); cursor:pointer; display:flex; gap:8px; align-items:baseline; }
+    .movie:last-child { border-bottom:none; }
+    .movie .rank { color:var(--muted); font-size:12px; min-width:24px; flex-shrink:0; }
+    .movie .title { font-weight:600; }
+    .movie .meta { color:var(--muted); font-size:13px; }
+    .empty { color:var(--muted); font-style:italic; }
+    .error { color:var(--err); font-style:normal; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Gợi ý phim — MovieLens ALS</h1>
+  <div class="stats" id="stats">Đang tải…</div>
+
+  <div class="controls">
+    <input id="userId" type="number" min="1" value="1" placeholder="userId">
+    <button onclick="loadUser()">Xem gợi ý</button>
+    <input id="q" class="search-input" placeholder="Tìm phim…" oninput="doSearch(this.value)">
+  </div>
+  <div class="suggested" id="suggested"></div>
+
+  <div class="panel" id="searchPanel" style="display:none">
+    <h2>Kết quả tìm kiếm</h2>
+    <div id="searchResults" class="empty">—</div>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <h2>Lịch sử xem</h2>
+      <div class="chips" id="historyChips"></div>
+      <div id="history" class="empty">—</div>
+    </div>
+    <div class="panel">
+      <h2>Gợi ý cho bạn</h2>
+      <div class="chips" id="recsChips"></div>
+      <div id="recs" class="empty">—</div>
+    </div>
+  </div>
+
+  <div class="panel"><h2>Phim tương tự</h2><div id="similar" class="empty">Bấm vào một phim để xem</div></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// Task 10: người dùng gợi ý sẵn để người chấm bấm thay vì đoán userId.
+// Chọn bằng cách khảo sát /api/users/{id}/history?k=20 trên 40 user ngẫu
+// nhiên rồi đếm thể loại xuất hiện trong lịch sử của từng người — 5 id
+// dưới đây có phân bố thể loại rõ rệt và khác nhau (xem báo cáo Task 10).
+const SUGGESTED_USERS = [
+  { id: 164, label: '#164 · Hành động' },
+  { id: 143, label: '#143 · Hài / Tình cảm' },
+  { id: 605, label: '#605 · Phiêu lưu / Giả tưởng' },
+  { id: 433, label: '#433 · Tội phạm / Giật gân' },
+  { id: 90,  label: '#90 · Chính kịch' },
+];
+
+function renderSuggested() {
+  const el = $('suggested');
+  el.innerHTML = '<span class="label">Thử nhanh:</span>';
+  for (const u of SUGGESTED_USERS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost';
+    b.textContent = u.label;
+    b.onclick = () => { $('userId').value = u.id; loadUser(); };
+    el.appendChild(b);
+  }
+}
+
+// Tóm tắt "gu xem phim" bằng thể loại xuất hiện nhiều nhất trong danh sách
+// đang hiển thị. Lịch sử trả về sắp theo rating giảm dần rồi movieId tăng
+// dần (xem serving/store.py) nên với user chấm nhiều phim 5.0, các phim
+// hiển thị đầu tiên luôn là những movieId nhỏ nhất — tức phim giữa-thập-
+// niên-90 — bất kể gu thật của họ. Dải chip thể loại này được tính trên
+// TOÀN BỘ danh sách đã tải (k=20, tối đa mà ratings_sample lưu cho một
+// user) nên phản ánh đúng gu xem dù các tựa phim hiển thị bị lệch tuổi.
+function genreCounts(items) {
+  const counts = {};
+  for (const m of items || []) {
+    for (const g of (m.genres || '').split('|')) {
+      if (!g || g === '(no genres listed)') continue;
+      counts[g] = (counts[g] || 0) + 1;
+    }
+  }
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+}
+
+function renderChips(el, items) {
+  const top = genreCounts(items);
+  el.innerHTML = '';
+  for (const [g] of top) {
+    const span = document.createElement('span');
+    span.className = 'chip';
+    span.textContent = g;
+    el.appendChild(span);
+  }
+}
+
+// Không có phim nào được đóng khung "gợi ý số 1" một cách nổi bật — khoảng
+// 47% user có cùng phim đứng hạng 1 (Shawshank Redemption, đo ở Task 8),
+// nên nếu chỉ làm nổi bật mục đầu tiên, gần một nửa người xem demo sẽ thấy
+// y hệt nhau. Toàn bộ danh sách (tới 12 mục) hiển thị đồng đều, chỉ có số
+// thứ hạng nhỏ ở lề trái, để sự khác biệt giữa các user lộ ra ở các hạng
+// sau thay vì chỉ ở hạng 1.
+function renderMovies(el, items, scoreKey, onClick) {
+  if (!items || !items.length) { el.className = 'empty'; el.textContent = 'Không có dữ liệu'; return; }
+  el.className = '';
+  el.innerHTML = '';
+  for (const m of items) {
+    const div = document.createElement('div');
+    div.className = 'movie';
+    const score = m[scoreKey] !== undefined ? ` · ${Number(m[scoreKey]).toFixed(2)}` : '';
+    const rank = m.rank !== undefined ? `<div class="rank">#${m.rank}</div>` : '';
+    div.innerHTML = `${rank}<div><div class="title"></div><div class="meta"></div></div>`;
+    div.querySelector('.title').textContent = m.title;
+    div.querySelector('.meta').textContent = `${m.genres || ''}${score}`;
+    if (onClick) div.onclick = () => onClick(m.movieId);
+    el.appendChild(div);
+  }
+}
+
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const body = await res.json();
+      if (typeof body.detail === 'string') msg = body.detail;
+      else if (Array.isArray(body.detail)) msg = body.detail.map(d => d.msg).join('; ');
+    } catch (_) { /* body không phải JSON, giữ statusText */ }
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+function friendlyMessage(e, fallback404) {
+  if (e.status === 503) return 'Chưa có dữ liệu, hãy chạy pipeline trước.';
+  if (e.status === 404) return fallback404 || e.message;
+  return e.message || 'Đã có lỗi xảy ra.';
+}
+
+async function loadUser() {
+  const id = $('userId').value;
+  if (!id) return;
+  try {
+    // k=12 (thay vì 10 mặc định) để phần khác biệt giữa các user lộ rõ
+    // hơn ở nửa sau danh sách, xem ghi chú tại renderMovies().
+    const recs = await getJSON(`/api/users/${id}/recommendations?k=12`);
+    renderChips($('recsChips'), recs.items);
+    renderMovies($('recs'), recs.items, 'score', loadSimilar);
+  } catch (e) {
+    $('recsChips').innerHTML = '';
+    $('recs').className = 'empty error';
+    $('recs').textContent = friendlyMessage(e, `Không có gợi ý cho user ${id}`);
+  }
+  try {
+    // k=20: lấy toàn bộ ratings_sample của user (tối đa 20 dòng) thay vì
+    // chỉ 10, để dải chip thể loại và danh sách đều phản ánh đủ gu xem
+    // thay vì chỉ nửa đầu bị lệch về movieId nhỏ, xem ghi chú genreCounts().
+    const hist = await getJSON(`/api/users/${id}/history?k=20`);
+    renderChips($('historyChips'), hist.items);
+    renderMovies($('history'), hist.items, 'rating', loadSimilar);
+  } catch (e) {
+    $('historyChips').innerHTML = '';
+    $('history').className = 'empty error';
+    $('history').textContent = friendlyMessage(e);
+  }
+}
+
+async function loadSimilar(movieId) {
+  try {
+    const data = await getJSON(`/api/movies/${movieId}/similar?k=10`);
+    renderMovies($('similar'), data.items, 'similarity', loadSimilar);
+  } catch (e) {
+    $('similar').className = 'empty error';
+    $('similar').textContent = friendlyMessage(e, `Không tìm thấy phim tương tự cho phim ${movieId}`);
+  }
+}
+
+let searchTimer;
+function doSearch(q) {
+  clearTimeout(searchTimer);
+  q = q.trim();
+  if (!q) { $('searchPanel').style.display = 'none'; return; }
+  searchTimer = setTimeout(async () => {
+    $('searchPanel').style.display = '';
+    try {
+      const data = await getJSON(`/api/movies/search?q=${encodeURIComponent(q)}&limit=10`);
+      renderMovies($('searchResults'), data.items, null, loadSimilar);
+    } catch (e) {
+      $('searchResults').className = 'empty error';
+      $('searchResults').textContent = friendlyMessage(e);
+    }
+  }, 250);
+}
+
+renderSuggested();
+
+getJSON('/api/stats').then(s => {
+  $('stats').textContent = `${s.users_with_recommendations.toLocaleString('vi')} user · ${s.movies_in_catalog.toLocaleString('vi')} phim · rank = ${s.factor_rank}`;
+}).catch(e => { $('stats').className = 'stats error'; $('stats').textContent = friendlyMessage(e); });
+
+loadUser();
+</script>
+</body>
+</html>
