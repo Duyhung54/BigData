@@ -71,6 +71,14 @@ def recommendations(user_id: int, k: int = Query(10, ge=1, le=20), store: Store 
 
 @app.get("/api/users/{user_id}/history")
 def history(user_id: int, k: int = Query(10, ge=1, le=50), store: Store = Depends(get_store)):
+    """Trả 200 kèm items rỗng khi user không có rating nào, KHÔNG trả 404.
+
+    Cố ý khác `recommendations`/`similar`, nơi rỗng nghĩa là "không tìm
+    thấy đối tượng" nên là lỗi. Ở đây user tồn tại nhưng chưa có/không có
+    rating đạt ngưỡng liên quan là một trạng thái hợp lệ, không phải lỗi —
+    và giao diện T10 đặt history cạnh recommendations, nơi một cột rỗng
+    hiển thị bình thường còn 404 sẽ cần xử lý riêng.
+    """
     return {"userId": user_id, "items": store.history(user_id, k)}
 
 

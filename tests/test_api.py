@@ -20,9 +20,18 @@ def store_paths(tmp_path):
         "title": ["Ma trận (1999)", "Kẻ huỷ diệt (1984)", "Tình yêu (2001)"],
         "genres": ["Action|Sci-Fi", "Action|Sci-Fi", "Romance"],
     })
+    # User 1 đã chấm cả ba phim, rating không theo cùng thứ tự với movieId
+    # hay với recommendations, để phân biệt được history có thật sự sắp
+    # xếp theo rating hay đang vô tình trùng thứ tự của bảng khác.
+    ratings_sample = pd.DataFrame({
+        "userId": [1, 1, 1],
+        "movieId": [12, 10, 11],
+        "rating": [5.0, 4.5, 3.0],
+    })
     with sqlite3.connect(db) as conn:
         recs.to_sql("recommendations", conn, if_exists="replace", index=False)
         movies.to_sql("movies", conn, if_exists="replace", index=False)
+        ratings_sample.to_sql("ratings_sample", conn, if_exists="replace", index=False)
         conn.execute("CREATE INDEX idx_u ON recommendations(userId)")
 
     # Phim 10 và 11 gần nhau; phim 12 nằm hướng khác
@@ -82,6 +91,41 @@ def test_similar_unknown_movie_returns_404(client):
     assert client.get("/api/movies/9999/similar").status_code == 404
 
 
+def test_similar_excludes_self_even_when_k_covers_whole_catalog(client):
+    # k=10 > 3 phim đủ điều kiện trong fixture: nếu lát cắt argsort không
+    # lọc chính nó ra, phim 10 sẽ xuất hiện trong kết quả của chính nó.
+    body = client.get("/api/movies/10/similar?k=10").json()
+    assert 10 not in [item["movieId"] for item in body["items"]]
+    assert len(body["items"]) == 2
+
+
+def test_history_returns_highest_rated_first_with_metadata(client):
+    body = client.get("/api/users/1/history?k=3").json()
+
+    assert [item["movieId"] for item in body["items"]] == [12, 10, 11]
+    assert body["items"][0]["rating"] == 5.0
+    assert body["items"][0]["title"] == "Tình yêu (2001)"
+    assert body["items"][0]["genres"] == "Romance"
+
+
+def test_history_respects_k(client):
+    body = client.get("/api/users/1/history?k=2").json()
+    assert [item["movieId"] for item in body["items"]] == [12, 10]
+
+
+def test_history_for_unknown_user_is_200_with_empty_items(client):
+    """Ghim quyết định: user không có rating là hợp lệ, không phải 404.
+
+    Khác với recommendations/similar (rỗng = không tìm thấy đối tượng =
+    lỗi), history rỗng = "user này chưa chấm điểm phim nào" = trạng thái
+    hợp lệ. Nếu sau này ai đổi endpoint sang 404, test này báo lỗi thay vì
+    để hành vi API âm thầm đổi.
+    """
+    resp = client.get("/api/users/9999/history")
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
 def test_search_is_case_insensitive_substring(client):
     body = client.get("/api/movies/search?q=ma tr").json()
     assert 10 in [item["movieId"] for item in body["items"]]
@@ -93,6 +137,12 @@ def test_search_empty_query_is_rejected(client):
 
 def test_search_missing_query_is_rejected(client):
     assert client.get("/api/movies/search").status_code == 422
+
+
+def test_search_percent_is_treated_literally_not_as_wildcard(client):
+    # Không escape thì q="%" khớp MỌI tựa phim (LIKE '%%%' luôn đúng).
+    body = client.get("/api/movies/search?q=%25").json()  # %25 = "%" url-encoded
+    assert body["items"] == []
 
 
 def test_k_out_of_range_is_rejected(client):
@@ -173,6 +223,7 @@ def test_data_endpoints_return_503_when_files_missing(tmp_path, monkeypatch):
     client = TestClient(api.app)
 
     assert client.get("/api/users/1/recommendations").status_code == 503
+    assert client.get("/api/users/1/history").status_code == 503
     assert client.get("/api/movies/10/similar").status_code == 503
     assert client.get("/api/movies/search?q=abc").status_code == 503
     assert client.get("/api/stats").status_code == 503

@@ -87,7 +87,13 @@ class Store:
             return []
         scores = self._factors @ self._factors[row]
         scores[row] = -np.inf                     # không tự gợi ý chính nó
-        top = np.argsort(-scores)[:k]
+        # -inf luôn xếp hạng CUỐI trong argsort(-scores), nên khi k < n-1
+        # phim tự thân không lọt vào top-k. Nhưng nếu k >= n-1 (không xảy ra
+        # hôm nay vì k tối đa 50 << 1110 phim đủ điều kiện), nó vẫn nằm
+        # trong k phần tử đầu — lấy dư một phần tử rồi lọc bỏ chính nó thay
+        # vì dựa vào việc nó luôn "rơi ra ngoài" lát cắt.
+        top = np.argsort(-scores)[: k + 1]
+        top = top[top != row][:k]
         movie_ids = [int(self._movie_ids[i]) for i in top]
         meta = self._movie_rows(movie_ids)
         return [
@@ -101,10 +107,14 @@ class Store:
         ]
 
     def search(self, query: str, limit: int = 10) -> list:
+        # LIKE coi % và _ là ký tự đại diện; không escape thì q="%" khớp MỌI
+        # tựa phim. Escape bằng '\' (khai báo qua ESCAPE) để chúng được hiểu
+        # là ký tự thường trong chuỗi người dùng nhập, không phải wildcard.
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         rows = self._conn.execute(
-            "SELECT movieId, title, genres FROM movies WHERE title LIKE ? "
+            "SELECT movieId, title, genres FROM movies WHERE title LIKE ? ESCAPE '\\' "
             "ORDER BY LENGTH(title) LIMIT ?",
-            (f"%{query}%", limit),
+            (f"%{escaped}%", limit),
         ).fetchall()
         return [dict(row) for row in rows]
 
