@@ -18,6 +18,7 @@ services:
       - ../src:/opt/app/src
       - ../tests:/opt/app/tests
       - ../report:/opt/app/report
+      - ../serving:/opt/app/serving
 
   spark-worker:
     build:

@@ -3,3 +3,9 @@ pandas>=2.0,<3.0
 pyarrow>=14.0
 matplotlib>=3.7,<3.8
 pytest>=8.0
+
+# Chỉ để chạy tests/test_api.py (tầng serving) bên trong container Spark qua
+# scripts/test.sh — bản thân serving/ chạy trên image Dockerfile.app riêng
+# (python:3.11-slim), không dùng các gói này lúc runtime thật.
+fastapi>=0.110
+httpx>=0.27
