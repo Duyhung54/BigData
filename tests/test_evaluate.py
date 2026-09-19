@@ -1,11 +1,13 @@
 import pytest
+from pyspark.ml.recommendation import ALS
+from pyspark.sql import functions as F
 
 from src.jobs.evaluate import (
     eligible_items,
     ranking_metrics,
     rating_metrics,
     relevant_items,
-    top_k_from_scores,
+    restrict_model_to_eligible_items,
 )
 
 
@@ -83,16 +85,36 @@ def test_eligible_items_keeps_only_movies_at_or_above_min_ratings(spark):
     assert result == {10}
 
 
-def test_top_k_from_scores_orders_by_prediction_desc_and_truncates_to_k(spark):
-    scored = spark.createDataFrame(
+def test_restrict_model_to_eligible_items_limits_recommendations_to_eligible_ids(spark, tmp_path):
+    # movie 12 không đủ điều kiện (lẽ ra ALS vẫn có thể gợi ý nó nếu không lọc);
+    # sau khi lọc, mọi gợi ý phải nằm trong {10, 11}.
+    ratings = spark.createDataFrame(
         [
-            (1, 10, 3.0), (1, 11, 5.0), (1, 12, 4.0),
-            (2, 20, 1.0),
+            (1, 10, 5.0), (1, 11, 4.0), (1, 12, 1.0),
+            (2, 10, 4.0), (2, 11, 5.0), (2, 12, 2.0),
+            (3, 10, 3.0), (3, 11, 3.0), (3, 12, 5.0),
         ],
-        "userId int, movieId int, prediction double",
+        "userId int, movieId int, rating double",
+    )
+    model = ALS(
+        userCol="userId", itemCol="movieId", ratingCol="rating",
+        rank=2, maxIter=5, seed=42, coldStartStrategy="drop",
+    ).fit(ratings)
+    eligible = spark.createDataFrame([(10,), (11,)], "movieId int")
+
+    restricted = restrict_model_to_eligible_items(
+        spark, model, eligible, tmp_path / "model_eligible"
     )
 
-    result = {r["userId"]: r["items"] for r in top_k_from_scores(scored, k=2).collect()}
+    factor_ids = {r["id"] for r in restricted.itemFactors.collect()}
+    assert factor_ids == {10, 11}
 
-    assert result[1] == [11, 12]
-    assert result[2] == [20]
+    test_users = spark.createDataFrame([(1,), (2,), (3,)], "userId int")
+    recs = (
+        restricted.recommendForUserSubset(test_users, 2)
+        .select("userId", F.col("recommendations.movieId").alias("items"))
+        .collect()
+    )
+    for row in recs:
+        assert set(row["items"]) <= {10, 11}
+        assert 12 not in row["items"]

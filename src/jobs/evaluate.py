@@ -5,10 +5,12 @@ một mô hình RMSE đẹp vẫn có thể gợi ý danh sách vô dụng. Vì 
 cả metrics xếp hạng lẫn đối chiếu với baseline.
 """
 import csv as csv_module
+import shutil
+from pathlib import Path
 
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml.recommendation import ALSModel
-from pyspark.sql import DataFrame, Window
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
@@ -98,25 +100,61 @@ def eligible_items(
     )
 
 
-def top_k_from_scores(scored: DataFrame, k: int = config.TOP_K) -> DataFrame:
-    """Từ (userId, movieId, prediction) đã chấm điểm, lấy top-k movieId mỗi user.
+def restrict_model_to_eligible_items(
+    spark: SparkSession, model: ALSModel, eligible: DataFrame, tmp_dir
+) -> ALSModel:
+    """Trả về một ALSModel mà itemFactors chỉ còn các phim trong `eligible`.
 
-    Dùng struct(rank, movieId) rồi sort_array thay vì orderBy trước groupBy:
-    Spark không đảm bảo thứ tự hàng sống sót qua shuffle của groupBy, nên
-    orderBy-rồi-collect_list có thể ra danh sách sai thứ tự một cách âm thầm.
+    Mục đích: tái dùng recommendForUserSubset (thuật toán top-k khối hoá,
+    tối ưu của Spark ALS — nhân ma trận cục bộ theo khối rồi lấy top-k cục
+    bộ, không bao giờ vật chất hoá toàn bộ tích user x item) để sinh gợi ý
+    CHỈ trong tập ứng viên đủ điều kiện, thay vì crossJoin(test_users, eligible)
+    rồi tự xếp hạng bằng window function. Trên ml-latest-small, crossJoin cho
+    586 x 1.110 ~ 650k cặp — chấp nhận được. Trên ml-25m, con số này thành
+    162.541 user x (~7.000-15.000 phim đủ điều kiện) = 1,1-2,5 TỶ cặp, tức
+    35-100 GB dữ liệu trung gian cộng với một lần shuffle-sort toàn phần cho
+    window function — vượt xa 7,66 GB RAM của Docker trên máy này và chắc
+    chắn OOM chứ không chỉ chậm.
+
+    ALSModel không có constructor công khai trong PySpark (không thể tự dựng
+    một model mới từ DataFrame factor), nhưng định dạng lưu của nó chỉ là
+    Parquet thuần (metadata/ + itemFactors/ + userFactors/, xem
+    org.apache.spark.ml.recommendation.ALSModel.load), nên có thể build một
+    bản "bị cắt" bằng API công khai:
+      1. Ghi model gốc ra `tmp_dir/full` (ALSModel.write().overwrite()).
+      2. Đọc lại itemFactors từ đó, inner-join với `eligible` (đổi tên
+         movieId -> id để khớp cột "id" của itemFactors).
+      3. Ghi kết quả lọc vào MỘT thư mục MỚI HOÀN TOÀN `tmp_dir/restricted`,
+         chưa từng được đọc trong lần gọi này — không bao giờ ghi đè một
+         thư mục Parquet đang đồng thời được đọc. Copy nguyên vẹn metadata/
+         và userFactors/ từ `full` sang `restricted` bằng shutil (không phụ
+         thuộc gì vào itemFactors nên không cần đi qua Spark).
+      4. ALSModel.load(tmp_dir/restricted).
+
+    Lựa chọn "ghi ra thư mục mới" thay vì "đọc hết vào bộ nhớ rồi ghi đè tại
+    chỗ" (cache()+count() rồi overwrite cùng đường dẫn): ghi-thư-mục-mới
+    không phụ thuộc vào việc cache có bị Spark evict giữa chừng hay không,
+    nên đúng trong mọi trường hợp, kể cả khi itemFactors lớn hơn bộ nhớ khả
+    dụng của driver — đúng tình huống ml-25m mà hàm này được viết ra để né.
     """
-    window = Window.partitionBy("userId").orderBy(F.col("prediction").desc())
-    ranked = (
-        scored.withColumn("rank", F.row_number().over(window))
-        .filter(F.col("rank") <= k)
-    )
-    return (
-        ranked.withColumn("pair", F.struct(F.col("rank"), F.col("movieId")))
-        .groupBy("userId")
-        .agg(F.sort_array(F.collect_list("pair")).alias("pairs"))
-        .withColumn("items", F.expr("transform(pairs, x -> x.movieId)"))
-        .select("userId", "items")
-    )
+    tmp_dir = Path(str(tmp_dir))
+    full_dir = tmp_dir / "full"
+    restricted_dir = tmp_dir / "restricted"
+
+    model.write().overwrite().save(str(full_dir))
+
+    if restricted_dir.exists():
+        shutil.rmtree(str(restricted_dir))
+
+    item_factors = spark.read.parquet(str(full_dir / "itemFactors"))
+    eligible_ids = eligible.select(F.col("movieId").alias("id")).distinct()
+    restricted_factors = item_factors.join(eligible_ids, on="id", how="inner")
+    restricted_factors.write.mode("overwrite").parquet(str(restricted_dir / "itemFactors"))
+
+    shutil.copytree(str(full_dir / "metadata"), str(restricted_dir / "metadata"))
+    shutil.copytree(str(full_dir / "userFactors"), str(restricted_dir / "userFactors"))
+
+    return ALSModel.load(str(restricted_dir))
 
 
 def _coverage_of(recs: DataFrame, catalog_size: int) -> float:
@@ -162,14 +200,21 @@ def main() -> None:
 
     # --- ALS, ứng viên có lọc min-support: chỉ xét phim >= MIN_RATINGS_FOR_RECOMMENDATION
     # lượt đánh giá trong train+val — cùng sân chơi với baseline popularity, vốn
-    # chỉ bao giờ gợi ý phim có hàng trăm lượt đánh giá. recommendForUserSubset
-    # không có tham số lọc ứng viên, nên ở đây chấm điểm trực tiếp lưới
-    # user x phim-đủ-điều-kiện rồi tự xếp hạng — cách này lấy đúng luôn K phim mỗi
-    # user (miễn số phim đủ điều kiện >= K), khỏi phải đoán xin dư bao nhiêu rồi lọc.
+    # chỉ bao giờ gợi ý phim có hàng trăm lượt đánh giá. recommendForUserSubset không
+    # có tham số lọc ứng viên, nên ta dựng một ALSModel mà itemFactors chỉ còn các
+    # phim đủ điều kiện (xem restrict_model_to_eligible_items) rồi gọi
+    # recommendForUserSubset trên model đó — tận dụng thuật toán top-k khối hoá của
+    # Spark thay vì tự crossJoin(test_users, eligible) rồi window function, thứ sẽ
+    # OOM ở quy mô ml-25m (xem docstring của hàm).
     eligible = eligible_items(train_val, config.MIN_RATINGS_FOR_RECOMMENDATION).cache()
     n_eligible = eligible.count()
-    scored_candidates = model.transform(test_users.crossJoin(eligible))
-    als_recs = top_k_from_scores(scored_candidates, k).cache()
+    restricted_model = restrict_model_to_eligible_items(
+        spark, model, eligible, config.OUTPUT_DIR / "model_eligible"
+    )
+    als_recs = (
+        restricted_model.recommendForUserSubset(test_users, k)
+        .select("userId", F.col("recommendations.movieId").alias("items"))
+    ).cache()
     n_short = als_recs.filter(F.size("items") < k).count()
     if n_short:
         print(
