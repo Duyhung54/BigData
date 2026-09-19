@@ -191,10 +191,14 @@ Thuật toán: ALS explicit feedback (`implicitPrefs=False`), vì MovieLens có 
 | Tham số | Giá trị |
 |---|---|
 | `rank` | 10, 50, 100 |
-| `regParam` | 0.01, 0.1, 0.2 |
+| `regParam` | 0.01, 0.1, 0.2, 0.3, 0.5 |
 | `maxIter` | 10 (cố định) |
 
-9 lần fit, ước lượng 30–40 phút tổng trên cấu hình đã nêu. `maxIter` cố định để giữ ngân sách thời gian; nếu còn thời gian ở tuần 3 có thể mở rộng.
+**Vì sao `regParam` kéo tới 0.5.** Lần chạy thử trên `ml-latest-small` cho `regParam=0.2` thắng — nhưng 0.2 là giá trị lớn nhất trong lưới ban đầu, tức tối ưu nằm ở **biên**, và một kết quả tuning chạm biên là kết quả chưa kết luận được. "Sao không thử giá trị lớn hơn" là câu hỏi đầu tiên người chấm sẽ đặt. Thêm 0.3 và 0.5 để tối ưu nằm hẳn bên trong lưới.
+
+Cùng lần chạy đó cho thấy **`rank` gần như không ảnh hưởng**: tại `regParam=0.2`, rank 10/50/100 cho RMSE 0.90823 / 0.90886 / 0.90891 — chênh 0.0007, tức nhiễu. Vẫn giữ cả ba rank vì "tăng số chiều ẩn không cải thiện gì, chính quy hoá mới là yếu tố quyết định" tự nó là một kết luận đáng viết trong báo cáo.
+
+15 lần fit, ước lượng 50–65 phút tổng trên cấu hình đã nêu. `maxIter` cố định để giữ ngân sách thời gian.
 
 Mỗi tổ hợp huấn luyện trên tập `train` và chấm điểm trên tập `validation`. Tổ hợp thắng được huấn luyện lại trên `train + validation` rồi mới đánh giá trên `test` ở Job 3.
 
@@ -216,6 +220,14 @@ Chạy trên tập `test`, đúng một lần, sau khi siêu tham số đã ch�
 **Định nghĩa "liên quan" (relevant):** một phim trong tập test được tính là liên quan nếu user chấm **≥ 4.0 sao**. Ngưỡng này phải cố định và nêu rõ trong báo cáo — Precision@10 tính với ngưỡng 3.0 và với ngưỡng 4.0 cho ra hai con số khác hẳn nhau, nên con số không kèm ngưỡng là con số vô nghĩa.
 
 **Định nghĩa Coverage:** tỷ lệ phần trăm số phim phân biệt xuất hiện trong danh sách top-10 của toàn bộ user, chia cho tổng số phim trong catalog.
+
+**Ngưỡng tối thiểu khi sinh gợi ý: `MIN_RATINGS_FOR_RECOMMENDATION = 20`.**
+
+Lần chạy đầu tiên không có ngưỡng này cho kết quả: ALS đạt NDCG@10 = 0.00031 trong khi baseline popularity đạt 0.03082 — thua khoảng 100 lần, dù ALS thắng cả ba baseline về RMSE. Chẩn đoán: phim mà ALS gợi ý có số lượt đánh giá **trung vị = 1** (trung bình 1.4), so với trung vị 3 của cả catalog và trung bình 268 của danh sách popularity. Factor tiềm ẩn của những phim đó được ước lượng từ đúng một quan sát, nên điểm dự đoán bị đẩy lên cực trị và chúng chiếm hết top-10 — trong khi gần như không bao giờ xuất hiện trong tập test của user.
+
+Đây là hiện tượng đã được ghi nhận: mô hình explicit-feedback tối ưu cho sai số dự đoán **không** tối ưu cho xếp hạng top-N. Vì vậy tập ứng viên khi sinh top-N được lọc còn các phim có ít nhất 20 lượt đánh giá trong tập huấn luyện.
+
+**Báo cáo phải nêu cả hai con số — trước lọc và sau lọc — chứ không thay thế.** Con số trước lọc là bằng chứng cho luận điểm "RMSE thấp không đồng nghĩa gợi ý tốt", vốn là kết luận có giá trị nhất của phần đánh giá. Việc lọc cũng không thiên vị ALS: baseline popularity vốn chỉ gợi ý phim có từ 268 lượt trở lên, nên ngưỡng này đưa hai bên về cùng mặt bằng thay vì ưu ái một bên.
 
 RMSE đo sai lệch của điểm dự đoán, không đo chất lượng của danh sách gợi ý — một mô hình có RMSE tốt vẫn có thể gợi ý danh sách vô dụng. Coverage đo tỷ lệ catalog mà hệ thống thực sự gợi ý tới, phát hiện trường hợp mô hình chỉ quanh quẩn vài phim nổi tiếng.
 

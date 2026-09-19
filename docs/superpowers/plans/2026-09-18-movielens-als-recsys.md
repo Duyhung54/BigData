@@ -250,9 +250,18 @@ RELEVANCE_THRESHOLD = 4.0
 TOP_K = 10
 N_RECOMMENDATIONS = 20
 
+# Chỉ sinh gợi ý từ các phim có ít nhất ngần này lượt đánh giá trong tập huấn luyện.
+# Không có ngưỡng này, ALS gợi ý toàn phim có TRUNG VỊ 1 lượt đánh giá: factor của
+# chúng ước lượng từ đúng một quan sát nên điểm dự đoán bị đẩy lên cực trị và chiếm
+# hết top-10, khiến NDCG@10 rớt xuống 0.0003 so với 0.031 của baseline popularity.
+MIN_RATINGS_FOR_RECOMMENDATION = 20
+
 # Lưới siêu tham số
 ALS_RANKS = [10, 50, 100]
-ALS_REG_PARAMS = [0.01, 0.1, 0.2]
+# regParam kéo tới 0.5 vì lần chạy thử trên ml-latest-small cho 0.2 thắng —
+# mà 0.2 là giá trị lớn nhất được thử, tức tối ưu nằm ở BIÊN của lưới và chưa
+# kết luận được. Thêm 0.3 và 0.5 để tối ưu nằm hẳn bên trong lưới.
+ALS_REG_PARAMS = [0.01, 0.1, 0.2, 0.3, 0.5]
 ALS_MAX_ITER = 10
 ALS_CHECKPOINT_INTERVAL = 5
 ```
@@ -503,6 +512,11 @@ from src.session import get_spark
 
 TARGET_FILE_MB = 128
 
+# Tỷ lệ nén CSV -> Parquet+Snappy, đo thực tế trên ml-latest-small: 670883/2483723 = 0.27.
+# Dùng 0.30 cho an toàn. Cần hằng số này vì số file phải quyết định TRƯỚC khi ghi,
+# mà lúc đó chưa biết dung lượng Parquet thật.
+ESTIMATED_PARQUET_RATIO = 0.30
+
 
 def read_ratings_csv(spark: SparkSession, path: str) -> DataFrame:
     return spark.read.csv(path, header=True, schema=RATINGS_SCHEMA)
@@ -518,19 +532,32 @@ def _dir_bytes(path: Path) -> int:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
 
-def _n_output_files(n_bytes: int) -> int:
-    """Gộp về các file ~128 MB.
+def _n_output_files(csv_bytes: int) -> int:
+    """Gộp về các file Parquet ~128 MB.
+
+    Chia dung lượng PARQUET ƯỚC TÍNH, không phải dung lượng CSV. Parquet+Snappy
+    chỉ còn khoảng 30% so với CSV, nên chia thẳng csv_bytes sẽ cho ra file nhỏ
+    hơn mục tiêu khoảng 3 lần — ở ml-25m là ~35 MB/file thay vì 128 MB.
 
     KHÔNG partition theo userId: 162.000 user sẽ sinh 162.000 thư mục con —
     lỗi small-files kinh điển. Mọi job phía sau đều đọc toàn bộ dữ liệu nên
     partition theo cột không đem lại lợi ích gì.
     """
-    return max(1, round(n_bytes / (TARGET_FILE_MB * 1024 * 1024)))
+    estimated_parquet_bytes = csv_bytes * ESTIMATED_PARQUET_RATIO
+    return max(1, round(estimated_parquet_bytes / (TARGET_FILE_MB * 1024 * 1024)))
 
 
 def ingest(spark: SparkSession) -> dict:
     csv_path = config.RATINGS_CSV
     csv_bytes = _dir_bytes(csv_path)
+
+    # Khởi động Spark trước khi bấm giờ bất cứ thứ gì.
+    # Không có bước này, phép đo đầu tiên (inferSchema) gánh luôn chi phí một lần
+    # của JVM, cấp executor và sinh mã Catalyst — đo trên ml-latest-small cho
+    # inferSchema 10,08s so với schema tường minh 0,35s, tức 29 lần, trong khi
+    # chi phí thật của một lượt quét thêm chỉ khoảng 2 lần. Số liệu đó đi thẳng
+    # vào báo cáo nên phải đo cho đúng.
+    spark.range(1).count()
 
     # Đo thời gian khi dùng inferSchema, để so sánh trong báo cáo
     t0 = time.perf_counter()
@@ -678,6 +705,29 @@ def test_count_excluded_users(spark):
     df = spark.createDataFrame(rows, SCHEMA)
 
     assert count_excluded_users(df, min_ratings=5) == 1
+
+
+def test_split_is_deterministic_when_timestamps_tie(spark):
+    """Tie-break theo movieId phải cho kết quả giống hệt nhau qua nhiều lần chạy.
+
+    MovieLens có rất nhiều user chấm hàng loạt phim trong cùng một phiên, nên
+    trùng timestamp là chuyện thường. Thiếu tie-break, Spark tự do sắp xếp các
+    dòng trùng khác nhau ở mỗi lần chạy, và cùng một rating có thể rơi vào
+    train lần này, test lần sau — kết quả tuning ở Task 6 mất tính tái lập mà
+    không có gì báo lỗi.
+    """
+    # 10 rating, TẤT CẢ cùng timestamp
+    rows = [(7, movie_id, 4.0, 5000) for movie_id in range(1, 11)]
+    df = spark.createDataFrame(rows, SCHEMA)
+
+    first = {r["movieId"]: r["split"] for r in add_split_column(df).collect()}
+    second = {r["movieId"]: r["split"] for r in add_split_column(df).collect()}
+
+    assert first == second
+    # Thứ tự do movieId quyết định, nên phân bố phải giống hệt trường hợp
+    # timestamp tăng dần: movieId nhỏ nhất vào train, lớn nhất vào test.
+    assert first[1] == "train"
+    assert first[10] == "test"
 ```
 
 - [ ] **Step 2: Chạy test, xác nhận thất bại**
@@ -874,7 +924,15 @@ from typing import Iterable, Sequence, Set
 
 
 def _hits(recommended: Sequence, relevant: Set, k: int) -> int:
-    return sum(1 for item in list(recommended)[:k] if item in relevant)
+    """Đếm số phim liên quan PHÂN BIỆT nằm trong top-k.
+
+    Đếm phân biệt chứ không đếm số lần xuất hiện: nếu danh sách gợi ý lỡ chứa
+    một phim hai lần, cách đếm theo lần xuất hiện sẽ cho recall_at_k([1,1],{1},k=2)
+    = 2/1 = 2.0, tức vượt khoảng [0,1] hợp lệ mà không có gì báo lỗi. Danh sách
+    top-k của ALS không trùng lặp, nhưng metrics này sinh số cho báo cáo nên
+    không được phép trả về giá trị vô nghĩa dù đầu vào có sai.
+    """
+    return len({item for item in list(recommended)[:k] if item in relevant})
 
 
 def precision_at_k(recommended: Sequence, relevant: Set, k: int) -> float:
