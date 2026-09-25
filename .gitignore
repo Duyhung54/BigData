@@ -25,3 +25,6 @@ Thumbs.db
 
 # Workspace của subagent-driven-development
 .superpowers/
+
+# Log chạy pipeline (sinh ra khi chạy, không cần theo dõi)
+*.log
