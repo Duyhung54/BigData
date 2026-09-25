@@ -58,6 +58,20 @@ def ingest(spark: SparkSession) -> dict:
     # vào báo cáo nên phải đo cho đúng.
     spark.range(1).count()
 
+    # Khởi động thêm lần nữa, lần này CHẠM THẬT vào file CSV, trước khi bấm giờ.
+    # spark.range(1).count() ở trên chỉ khởi động JVM/executor/Catalyst chung
+    # chung — nó không đụng tới csv_path, nên lượt đọc có bấm giờ đầu tiên
+    # (inferSchema) vẫn phải gánh riêng: liệt kê file, nạp trang OS cache, và
+    # sinh mã codegen cho CSV datasource — những chi phí mà lượt đọc thứ hai
+    # (explicit schema) không phải trả nữa. Đó là lý do tỷ lệ đo được ở trên
+    # kẹt quanh 8 lần thay vì ~2 lần như dự đoán. Đọc bằng spark.read.text
+    # (không phải inferSchema) để không tự thiên vị: nếu khởi động bằng đúng
+    # phép đọc inferSchema sẽ làm khoảng cách đo được bị thu hẹp giả tạo. Đọc
+    # text trung tính làm nóng phần chi phí CẢ HAI lượt đọc có bấm giờ đều
+    # dùng chung (liệt kê file, OS cache), còn phần chênh lệch thật sự của
+    # inferSchema (thêm một lượt quét kiểu dữ liệu) vẫn được đo đúng.
+    spark.read.text(str(csv_path)).count()
+
     # Đo thời gian khi dùng inferSchema, để so sánh trong báo cáo
     t0 = time.perf_counter()
     spark.read.csv(str(csv_path), header=True, inferSchema=True).count()
