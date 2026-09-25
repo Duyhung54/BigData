@@ -79,8 +79,9 @@ class Store:
     def similar(self, movie_id: int, k: int = 10) -> list:
         """Cosine similarity trên item factors đã chuẩn hoá.
 
-        62.000 x rank chỉ vài chục MB, nên nhân một vector với cả ma trận mất
-        vài mili giây — không cần tiền tính toán ma trận 62.000 x 62.000.
+        16.358 x rank (rank=10, xem report/results/best_params.csv) chỉ vài
+        chục MB, nên nhân một vector với cả ma trận mất vài mili giây —
+        không cần tiền tính toán ma trận 16.358 x 16.358.
         """
         row = self._row_of.get(int(movie_id))
         if row is None:
@@ -89,7 +90,7 @@ class Store:
         scores[row] = -np.inf                     # không tự gợi ý chính nó
         # -inf luôn xếp hạng CUỐI trong argsort(-scores), nên khi k < n-1
         # phim tự thân không lọt vào top-k. Nhưng nếu k >= n-1 (không xảy ra
-        # hôm nay vì k tối đa 50 << 1110 phim đủ điều kiện), nó vẫn nằm
+        # hôm nay vì k tối đa 50 << 16.358 phim đủ điều kiện), nó vẫn nằm
         # trong k phần tử đầu — lấy dư một phần tử rồi lọc bỏ chính nó thay
         # vì dựa vào việc nó luôn "rơi ra ngoài" lát cắt.
         top = np.argsort(-scores)[: k + 1]

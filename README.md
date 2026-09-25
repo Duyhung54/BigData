@@ -63,14 +63,65 @@ SPARK_WORKER_REPLICAS=4 SPARK_WORKER_CORES=2 SPARK_WORKER_MEMORY=2g \
 
 ## Chạy pipeline
 
-Các job Spark nằm dưới `src/jobs/` (sẽ được thêm dần ở các task sau). Chạy
-một job bất kỳ bằng `spark-submit` bên trong container `spark-master`, ví dụ:
+Các job Spark nằm dưới `src/jobs/` (`ingest.py` -> `train_als.py` ->
+`evaluate.py` -> `export_recs.py`). Đừng gọi `spark-submit` cho từng job thủ
+công — dùng `scripts/run_pipeline.sh`, chạy cả bốn job theo đúng thứ tự bên
+trong container `spark-master`:
+
+```bash
+./scripts/run_pipeline.sh ml-25m            # bộ đầy đủ để chạy thật (mặc định)
+./scripts/run_pipeline.sh ml-latest-small   # bộ nhỏ để phát triển/test nhanh
+```
+
+> **Cảnh báo ghi đè dataset.** `src/config.py` scope input theo dataset
+> (`data/raw/<dataset>/`) nhưng KHÔNG scope output: lake Parquet, model ALS,
+> `recs.sqlite` đang phục vụ demo, và bốn file CSV kết quả trong
+> `report/results/` dùng chung một đường dẫn cho mọi dataset (cố tình —
+> `serving/api.py` hardcode một phần các đường dẫn đó độc lập với
+> `config.py`, nên namespacing theo dataset sẽ làm demo âm thầm hỏng). Vì
+> vậy `run_pipeline.sh` sẽ **từ chối chạy** nếu dataset bạn yêu cầu khác với
+> dataset đã sinh ra `report/results/ingest_stats.csv` hiện có, để tránh
+> việc chạy nhanh `ml-latest-small` để smoke-test trước demo âm thầm xoá mất
+> lake/model/`recs.sqlite` và các CSV kết quả của `ml-25m` đã commit. Nếu
+> thật sự muốn đổi dataset đang phục vụ, thêm `--force`:
+> `./scripts/run_pipeline.sh ml-latest-small --force`.
+
+Nếu cần chạy một job đơn lẻ để debug (không qua `run_pipeline.sh`):
 
 ```bash
 docker compose -f docker/docker-compose.yml exec spark-master \
+  env DATASET=ml-25m SPARK_MASTER_URL=spark://spark-master:7077 \
   /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
-  src/jobs/<ten_job>.py
+  /opt/app/src/jobs/<ten_job>.py
 ```
+
+### Đo tốc độ theo số worker (Task 11)
+
+```bash
+./scripts/scaling_experiment.sh ml-25m
+```
+
+Đo thời gian huấn luyện ALS (rank/regParam cố định ở tổ hợp tốt nhất từ
+`report/results/best_params.csv`) trên 1, 2 rồi 4 worker, 3 lần chạy mỗi cấu
+hình, ghi vào `report/results/scaling.csv`. Script tự khôi phục cụm về 2
+worker mặc định khi kết thúc (kể cả khi bị lỗi hoặc Ctrl-C). Mất khoảng 90
+phút trên `ml-25m` — kết quả hiện tại trong `report/results/scaling.csv` và
+`tuning.csv` đã được đo sẵn và commit, **không cần chạy lại** trừ khi bạn
+thật sự muốn đo lại.
+
+### Sinh biểu đồ cho báo cáo
+
+```bash
+docker compose -f docker/docker-compose.yml exec spark-master \
+  python3 /opt/app/report/make_figures.py
+```
+
+Phải chạy **bên trong container `spark-master`**, không chạy bằng `python3`
+trên host: `matplotlib` chỉ có trong `requirements-spark.txt` (cài trong
+image Spark), không có trong `requirements-app.txt` (image `app` phục vụ
+demo) và thường cũng không có sẵn trên máy host. Script đọc các CSV trong
+`report/results/` và ghi PNG vào `report/figures/` (`tuning.png`,
+`scaling.png`, `baselines.png` — cả ba đã commit sẵn trong repo).
 
 ## Chạy test
 
@@ -90,4 +141,4 @@ Script này chạy `pytest` bên trong container `spark-master` (cần cụm đ�
 
 - Spark Master UI: http://localhost:8080 (kỳ vọng thấy 2 worker ở trạng thái ALIVE)
 - Spark Driver UI (khi có job đang chạy qua `spark-submit`): http://localhost:4040
-- API phục vụ gợi ý (từ Task 9-10 trở đi): http://localhost:8000
+- API phục vụ gợi ý + demo web (`serving/`, container `movielens-api`): http://localhost:8000

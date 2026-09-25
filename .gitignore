@@ -14,9 +14,6 @@ metastore_db/
 derby.log
 checkpoint/
 
-# Kết quả sinh ra
-report/figures/*.png
-
 # Kết quả nháp của thí nghiệm đo scale (Task 11) — xem
 # src/jobs/train_als.py:resolve_output_paths(). Không phải kết quả tuning
 # chính thức nên không theo dõi.

@@ -6,7 +6,7 @@
 # cho yếu tố nào.
 #
 # ALS_RANK/ALS_REG_PARAM ép train_als.py (grid_search, Task 6) chỉ fit ĐÚNG
-# MỘT tổ hợp (rank=10, regParam=0.2 — tổ hợp thắng khi chạy thử) thay vì cả
+# MỘT tổ hợp (rank=10, regParam=0.1 — tổ hợp thắng khi chạy thử) thay vì cả
 # lưới 15 tổ hợp. Không có hai biến này, mỗi phép đo thời gian sẽ gộp 15 lần
 # fit khác nhau và số liệu tăng tốc theo worker sẽ vô nghĩa.
 set -euo pipefail

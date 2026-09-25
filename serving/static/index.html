@@ -72,16 +72,25 @@
 <script>
 const $ = id => document.getElementById(id);
 
-// Task 10: người dùng gợi ý sẵn để người chấm bấm thay vì đoán userId.
-// Chọn bằng cách khảo sát /api/users/{id}/history?k=20 trên 40 user ngẫu
-// nhiên rồi đếm thể loại xuất hiện trong lịch sử của từng người — 5 id
-// dưới đây có phân bố thể loại rõ rệt và khác nhau (xem báo cáo Task 10).
+// Task 10 (nhãn cập nhật lại sau khi Task 11 đổi dữ liệu sang ml-25m — 5 id cũ
+// đều lấy từ ml-latest-small và không còn đúng trên ml-25m, xem sửa lỗi cuối
+// dự án). Người dùng gợi ý sẵn để người chấm bấm thay vì đoán userId.
+//
+// Chọn lại bằng cách truy vấn thẳng recs.sqlite (ml-25m): lấy 12 gợi ý đầu của
+// một user qua bảng recommendations JOIN movies rồi đếm thể loại bằng đúng
+// logic genreCounts() bên dưới — không dùng lại 5 id cũ, vì khảo sát cho thấy
+// phần lớn user trên ml-25m dồn về top-1 genre "Documentary" hoặc "Drama"
+// (ngưỡng MIN_RATINGS_FOR_RECOMMENDATION đẩy phim ít người biết lên đầu, xem
+// src/config.py) nên nhiều id ngẫu nhiên trông giống hệt nhau. Khảo sát ~3.000
+// user ngẫu nhiên, gom theo thể loại đứng đầu, rồi chọn thủ công 5 id có top-3
+// thể loại KHÔNG trùng nhau và có danh sách phim gợi ý thật sự khác nhau
+// (không chỉ khác nhãn thể loại).
 const SUGGESTED_USERS = [
-  { id: 164, label: '#164 · Hành động' },
-  { id: 143, label: '#143 · Hài / Tình cảm' },
-  { id: 605, label: '#605 · Phiêu lưu / Giả tưởng' },
-  { id: 433, label: '#433 · Tội phạm / Giật gân' },
-  { id: 90,  label: '#90 · Chính kịch' },
+  { id: 164,    label: '#164 · Tài liệu / Chính kịch' },
+  { id: 141216, label: '#141216 · Hành động / Phiêu lưu' },
+  { id: 24674,  label: '#24674 · Hoạt hình / Hài' },
+  { id: 51611,  label: '#51611 · Giật gân / Tội phạm' },
+  { id: 123205, label: '#123205 · Viễn tưởng / Giả tưởng' },
 ];
 
 function renderSuggested() {
@@ -126,9 +135,12 @@ function renderChips(el, items) {
   }
 }
 
-// Không có phim nào được đóng khung "gợi ý số 1" một cách nổi bật — khoảng
-// 47% user có cùng phim đứng hạng 1 (Shawshank Redemption, đo ở Task 8),
-// nên nếu chỉ làm nổi bật mục đầu tiên, gần một nửa người xem demo sẽ thấy
+// Không có phim nào được đóng khung "gợi ý số 1" một cách nổi bật. Trên
+// ml-latest-small (đo ở Task 8), 47% user có cùng phim đứng hạng 1 (Shawshank
+// Redemption). Trên dữ liệu ml-25m hiện đang phục vụ (đo trực tiếp trên
+// recs.sqlite: GROUP BY movieId WHERE rank=1), con số này là ~19% — 31.254 /
+// 162.541 user cùng nhận "Queen: Days of Our Lives (2011)" ở hạng 1. Vẫn đủ
+// lớn: nếu chỉ làm nổi bật mục đầu tiên, khoảng 1/5 người xem demo sẽ thấy
 // y hệt nhau. Toàn bộ danh sách (tới 12 mục) hiển thị đồng đều, chỉ có số
 // thứ hạng nhỏ ở lề trái, để sự khác biệt giữa các user lộ ra ở các hạng
 // sau thay vì chỉ ở hạng 1.

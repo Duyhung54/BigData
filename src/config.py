@@ -64,3 +64,15 @@ ALS_CHECKPOINT_INTERVAL = 5
 # Thí nghiệm đo scale ở Task 11 cần điều này để phép đo chỉ gồm một lần fit.
 ALS_FIXED_RANK = int(os.environ["ALS_RANK"]) if os.environ.get("ALS_RANK") else None
 ALS_FIXED_REG_PARAM = float(os.environ["ALS_REG_PARAM"]) if os.environ.get("ALS_REG_PARAM") else None
+
+
+def is_scaling_run() -> bool:
+    """True khi đang ở chế độ đo scale (Task 11): cả ALS_RANK và ALS_REG_PARAM
+
+    được đặt qua biến môi trường. src/jobs/train_als.py dùng kết quả này ở cả
+    grid_search() và resolve_output_paths() — hai chỗ đó PHẢI đồng ý với nhau
+    (nếu không, phép bảo vệ thư mục scratch trong resolve_output_paths() sẽ
+    âm thầm hỏng), nên định nghĩa một lần duy nhất ở đây thay vì lặp lại
+    predicate ở cả hai nơi.
+    """
+    return ALS_FIXED_RANK is not None and ALS_FIXED_REG_PARAM is not None
