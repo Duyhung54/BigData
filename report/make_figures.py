@@ -102,12 +102,23 @@ def plot_tuning(tuning_csv: Path, out_png: Path) -> None:
     ax.set_xlabel("rank (số chiều ẩn)")
     ax.set_ylabel("RMSE trên tập validation")
     ax.set_title("regParam quyết định RMSE; rank gần như không ảnh hưởng")
-    ax.legend(frameon=False, labelcolor=INK_2, fontsize=9, loc="upper left")
+    # Chú giải đặt HẲN bên ngoài vùng dữ liệu (dưới trục x) — đặt trong plot
+    # (dù ở góc) từng che mất điểm rank=10 của đường regParam=0.5. Không thu
+    # nhỏ font, không nới ylim để né dữ liệu — cả hai đều làm sai lệch cách
+    # đọc biểu đồ.
+    ax.legend(
+        frameon=False,
+        labelcolor=INK_2,
+        fontsize=9,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.14),
+        ncol=3,
+    )
     _style_axes(ax)
 
     fig.tight_layout()
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=150)
+    fig.savefig(out_png, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -194,10 +205,12 @@ def plot_scaling(scaling_csv: Path, out_png: Path) -> None:
 def plot_baseline_comparison(metrics_csv: Path, out_png: Path) -> None:
     """So sánh ALS với baseline trên các metric xếp hạng.
 
-    Thông điệp: als_unfiltered gần như bằng 0 (coldStart làm hỏng kết quả),
-    als (đã lọc) khá hơn hẳn, nhưng popularity vẫn thắng cả hai. Chỉ vẽ các
-    model có metric xếp hạng — global_mean/item_mean không có nên bị loại
-    bỏ hoàn toàn (không suy diễn thành 0).
+    Thông điệp: als_unfiltered (chưa lọc phim ít lượt đánh giá) gần như bằng 0;
+    als (đã lọc theo MIN_RATINGS_FOR_RECOMMENDATION, một ngưỡng hỗ trợ tối
+    thiểu trên PHIM, không phải "cold-start" — thuật ngữ đó ở project này
+    dành riêng cho user ít rating) khá hơn hẳn nhưng vẫn thua popularity.
+    Chỉ vẽ các model có metric xếp hạng — global_mean/item_mean không có
+    nên bị loại bỏ hoàn toàn (không suy diễn thành 0).
     """
     df = pd.read_csv(metrics_csv).set_index("model")
     columns = ["precision_at_k", "recall_at_k", "ndcg_at_k"]
@@ -235,14 +248,19 @@ def plot_baseline_comparison(metrics_csv: Path, out_png: Path) -> None:
     ax.set_xticks([p + width * (n_models - 1) / 2 for p in positions])
     ax.set_xticklabels(labels)
     ax.set_ylabel("Giá trị")
-    ax.set_title("ALS chỉ hơn baseline khi lọc coldStart; popularity vẫn dẫn đầu")
-    ax.legend(frameon=False, labelcolor=INK_2, fontsize=9)
+    # Xuống dòng: bản một dòng bị cắt ở lề phải figure (title dài hơn 7.5in ở
+    # fontsize tiêu đề). Không thu nhỏ font tiêu đề để né — xuống dòng thay.
+    ax.set_title(
+        "Lọc phim ít lượt đánh giá cải thiện ALS hàng trăm lần,\n"
+        "nhưng popularity vẫn dẫn đầu"
+    )
+    ax.legend(frameon=False, labelcolor=INK_2, fontsize=9, loc="upper left")
     _style_axes(ax)
     ax.set_ylim(0, ax.get_ylim()[1] * 1.15)  # chừa chỗ cho nhãn trên đỉnh cột
 
     fig.tight_layout()
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=150)
+    fig.savefig(out_png, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
