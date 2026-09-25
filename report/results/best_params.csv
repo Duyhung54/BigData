@@ -1,0 +1,2 @@
+rank,regParam,maxIter,rmse,fit_seconds,excluded_users
+10,0.1,10,0.81527,32.2,0

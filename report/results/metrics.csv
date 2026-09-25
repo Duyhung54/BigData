@@ -1,0 +1,6 @@
+model,rmse,mae,precision_at_k,recall_at_k,ndcg_at_k,coverage
+als_unfiltered,0.82578,0.63557,1e-05,0.0,1e-05,0.02633
+als,0.82578,0.63557,0.00603,0.00865,0.00735,0.0312
+global_mean,1.05997,0.83193,,,,
+item_mean,0.96469,0.74265,,,,
+popularity,,,0.02323,0.03691,0.03354,0.00017

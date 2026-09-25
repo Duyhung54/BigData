@@ -1,0 +1,2 @@
+dataset,n_ratings,csv_bytes,parquet_bytes,infer_schema_seconds,csv_read_seconds,parquet_read_seconds,n_output_files
+ml-25m,25000095,678260987,267642891,14.494,3.004,1.428,2
