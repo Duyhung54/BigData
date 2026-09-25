@@ -201,6 +201,18 @@ một phần nhờ ưu thế không chính đáng:
 Metrics: RMSE, MAE cho dự đoán điểm; Precision@10, Recall@10, NDCG@10, Coverage
 cho xếp hạng. Ngưỡng liên quan: rating **≥ 4.0**.
 
+**Chú thích về mẫu số của Coverage — nêu rõ trong báo cáo để tránh bị vặn.**
+Có hai con số "kích thước catalog" khác nhau và chúng không thay thế nhau được:
+
+| Nguồn | Giá trị | Dùng ở đâu |
+|---|---|---|
+| Số dòng trong `movies.csv` | 62.423 | Mục 2.1, panel thống kê của demo |
+| Số `movieId` phân biệt **có trong `ratings`** | **59.047** | **Mẫu số của Coverage** |
+
+Coverage dùng 59.047 vì một phim chưa ai đánh giá thì không thể nằm trong tập
+ứng viên, nên đưa nó vào mẫu số sẽ làm mọi mô hình trông tệ đi một cách vô nghĩa.
+Với Coverage 0,0312 thì số phim thực sự được gợi ý là 0,0312 × 59.047 ≈ **1.842**.
+
 ### 6.2 Kết quả
 
 | Mô hình | RMSE | MAE | NDCG@10 | Coverage |
@@ -223,14 +235,24 @@ ALS thắng rõ ràng mọi baseline về **dự đoán điểm**: RMSE 0,826 so
 (item mean) và 1,060 (global mean). Nhưng nó **thua baseline popularity 4,6 lần**
 về **chất lượng xếp hạng**: NDCG@10 đạt 0,00735 so với 0,03354.
 
-**Chẩn đoán.** Lần chạy đầu không lọc ứng viên cho NDCG@10 gần như bằng 0
-(0,00001). Đo phân bố số lượt đánh giá của các phim mà ALS gợi ý:
+**Chẩn đoán.** Lần chạy không lọc ứng viên cho NDCG@10 gần như bằng 0 (0,00001
+trên `ml-25m`). Nguyên nhân được xác định bằng cách đo phân bố số lượt đánh giá
+của các phim mà ALS gợi ý.
 
-| | Số lượt đánh giá trung bình | Trung vị |
+> ⚠️ **Bảng dưới đây đo trên `ml-latest-small`**, ở lần chạy chẩn đoán đầu tiên —
+> không phải `ml-25m`. Ghi rõ nguồn khi đưa vào báo cáo. Trên `ml-25m` con số
+> tương ứng của toàn catalog là **423,4** lượt/phim (25.000.095 / 59.047), nên
+> nếu để lẫn hai bộ dữ liệu thì người chấm chia thử sẽ thấy sai ngay.
+
+| (`ml-latest-small`) | Số lượt đánh giá trung bình | Trung vị |
 |---|---|---|
 | Phim ALS gợi ý | 1,4 | **1** |
 | Toàn catalog | 10,4 | 3 |
 | Phim popularity gợi ý | 268,0 | — |
+
+Cơ chế được chẩn đoán trên bộ nhỏ, nhưng **kết luận lặp lại ở bộ lớn**: trên
+`ml-25m`, NDCG@10 khi không lọc là 0,00001 so với 0,00735 sau khi lọc — vẫn đúng
+mô hình "ALS dồn top-K vào phim gần như không ai đánh giá".
 
 ALS đề xuất những phim **gần như không ai đánh giá**. Nhân tử tiềm ẩn của chúng
 được ước lượng từ đúng một quan sát, nên điểm dự đoán bị đẩy tới cực trị và
@@ -352,10 +374,23 @@ giải thích được.
 - Chức năng "phim tương tự" bằng cosine similarity trên nhân tử tiềm ẩn
 - Độ trễ: 4-16ms, vì tầng serving không đụng tới Spark
 
-**Nói thật về demo:** gợi ý không bám sát gu người dùng lắm — ví dụ user thích
-phim hành động lại được gợi ý *Lawrence of Arabia*. Đây đúng là bộ mặt nhìn thấy
-được của kết quả đã đo ở mục 6.3, và demo đang trung thực phơi bày điểm yếu của
-mô hình thay vì che đi.
+**Nói thật về demo.** Trên `ml-25m`, gợi ý của ALS nghiêng hẳn về **phim tài liệu
+và mini-series** — ví dụ user #164 nhận *Alive Inside*, *Triumph of the Nerds*,
+*Cranford*; user #433 nhận *Queen: Days of Our Lives*, *Band of Brothers*.
+
+Đây không phải lỗi mà là hệ quả trực tiếp của cơ chế đã phân tích ở mục 6.3: sau
+khi lọc còn các phim có ≥20 lượt đánh giá, những phim đạt **điểm trung bình cao
+nhất** trong nhóm đó chủ yếu là phim tài liệu và mini-series — loại nội dung mà
+chỉ người thực sự quan tâm mới tìm xem và chấm điểm, nên ít bị pha loãng bởi
+người xem ngẫu nhiên. ALS tối ưu cho điểm dự đoán nên nó dồn về đúng nhóm này.
+
+Đó là một quan sát đáng viết: **tối ưu RMSE đẩy mô hình về phía nội dung ngách
+được yêu thích, không phải nội dung phổ biến** — và đó chính là lý do nó thua
+baseline popularity trên metric xếp hạng.
+
+⚠️ Kiểm tra lại các ví dụ tên phim trong mục này bằng demo đang chạy trước khi
+nộp. Dữ liệu demo đổi theo bộ dữ liệu, và một ví dụ lấy từ lần chạy cũ sẽ không
+khớp với thứ người chấm nhìn thấy khi bấm nút.
 
 ---
 
@@ -381,6 +416,14 @@ mô hình thay vì che đi.
 - **ALS explicit-feedback không phù hợp tối ưu cho bài toán top-N.** Hướng cải
   tiến tự nhiên là dùng ALS implicit-feedback (`implicitPrefs=True`), vốn tối ưu
   trực tiếp cho xếp hạng.
+- **RMSE của ALS được đo trên tập test nhỏ hơn một chút so với baseline.**
+  `coldStartStrategy="drop"` loại bỏ các dòng test có phim chưa từng xuất hiện
+  trong train+val, trong khi hai baseline dự đoán điểm cho mọi dòng. Đã đo:
+  **8.384 trên 3.811.489 dòng test, tức 0,22%**. Tính bù các dòng đó cho ALS ở
+  mức chất lượng của global-mean thì RMSE chuyển từ 0,82578 lên khoảng 0,8264 —
+  trong khi khoảng cách tới `item_mean` là 0,139. Kết luận "ALS thắng baseline về
+  RMSE" không bị ảnh hưởng, nhưng nên nêu vì mục 6.1 có khẳng định về tính công
+  bằng của phép so sánh.
 
 ---
 
