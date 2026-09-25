@@ -96,8 +96,33 @@ def grid_search(
     return sorted(results, key=lambda row: row["rmse"])
 
 
+def resolve_output_paths():
+    """Chọn thư mục ghi kết quả: tuning chính thức, hay scratch cho đo scale.
+
+    Khi cả config.ALS_FIXED_RANK và config.ALS_FIXED_REG_PARAM được đặt (biến
+    môi trường ALS_RANK/ALS_REG_PARAM — scripts/scaling_experiment.sh của
+    Task 11 làm việc này), grid_search() không chạy lưới thật mà chỉ fit đúng
+    một tổ hợp cố định, lặp lại 9 lần trên các cấu hình cụm khác nhau. Đó là
+    một phép đo thời gian, không phải một lần tuning thật, nên KHÔNG được ghi
+    đè lên config.RESULTS_DIR/tuning.csv (lưới 15 tổ hợp thật) hay
+    config.MODEL_DIR (mô hình đang phục vụ). Trả về thư mục scratch riêng
+    thay vào đó.
+    """
+    if config.ALS_FIXED_RANK is not None and config.ALS_FIXED_REG_PARAM is not None:
+        return config.SCALING_RESULTS_DIR, config.SCALING_MODEL_DIR, True
+    return config.RESULTS_DIR, config.MODEL_DIR, False
+
+
 def main() -> None:
     spark = get_spark("train_als")
+
+    results_dir, model_dir, is_scaling_run = resolve_output_paths()
+    if is_scaling_run:
+        print(
+            f"Chế độ ĐO SCALE (ALS_RANK/ALS_REG_PARAM đặt qua biến môi trường): "
+            f"ghi kết quả vào {results_dir} và mô hình vào {model_dir} — "
+            f"KHÔNG đụng tới {config.RESULTS_DIR / 'tuning.csv'} hay {config.MODEL_DIR}."
+        )
 
     ratings = spark.read.parquet(str(config.RATINGS_PARQUET))
     excluded = count_excluded_users(ratings)
@@ -109,8 +134,8 @@ def main() -> None:
 
     results = grid_search(train, validation)
 
-    config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    tuning_csv = config.RESULTS_DIR / "tuning.csv"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    tuning_csv = results_dir / "tuning.csv"
     with open(tuning_csv, "w", newline="", encoding="utf-8") as fh:
         writer = csv_module.DictWriter(fh, fieldnames=list(results[0]))
         writer.writeheader()
@@ -120,13 +145,15 @@ def main() -> None:
     best = results[0]
     print(f"Tổ hợp tốt nhất: rank={best['rank']} regParam={best['regParam']} RMSE={best['rmse']}")
 
-    # Huấn luyện lại trên train + validation trước khi giao cho Job 3
+    # Huấn luyện lại trên train + validation trước khi giao cho Job 3. Luôn
+    # refit và save đầy đủ kể cả ở chế độ đo scale: bỏ bước này sẽ khiến phép
+    # đo thời gian không còn đại diện cho khối lượng công việc thật của job.
     refit_data = train.union(validation)
     final_model = build_als(best["rank"], best["regParam"]).fit(refit_data)
-    final_model.write().overwrite().save(str(config.MODEL_DIR))
-    print(f"Lưu mô hình: {config.MODEL_DIR}")
+    final_model.write().overwrite().save(str(model_dir))
+    print(f"Lưu mô hình: {model_dir}")
 
-    with open(config.RESULTS_DIR / "best_params.csv", "w", newline="", encoding="utf-8") as fh:
+    with open(results_dir / "best_params.csv", "w", newline="", encoding="utf-8") as fh:
         writer = csv_module.DictWriter(fh, fieldnames=list(best) + ["excluded_users"])
         writer.writeheader()
         writer.writerow({**best, "excluded_users": excluded})

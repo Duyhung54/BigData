@@ -28,9 +28,45 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Đường dẫn tương đối không bị ảnh hưởng bởi cờ đó.
 COMPOSE="docker compose -f $(dirname "$0")/../docker/docker-compose.yml"
 OUT="$ROOT/report/results/scaling.csv"
+# File tạm: kết quả được gom vào đây trong suốt vòng lặp và chỉ ĐỔI TÊN
+# (mv, thao tác gần như nguyên tử) vào OUT sau khi CẢ 9 phép đo chạy xong.
+# Nếu ghi thẳng vào OUT như trước đây (echo header > "$OUT" ngay từ đầu),
+# script xoá sạch số liệu ml-25m thật (~25 phút cụm để đo) NGAY KHI VỪA BẮT
+# ĐẦU CHẠY — trước khi có bất kỳ phép đo nào thành công — nên một lần chạy bị
+# lỗi, bị ngắt, hay CHỈ ĐỂ TEST cũng phá luôn kết quả của lần chạy thật trước
+# đó. Việc này đã xảy ra thật khi test trap ở dưới trên ml-latest-small.
+OUT_TMP=""
+
+# Dọn dẹp khi script kết thúc, DÙ THÀNH CÔNG, LỖI (set -e) HAY BỊ NGẮT
+# (Ctrl-C):
+#   1. Khôi phục cụm Spark về cấu hình mặc định (2 worker, dùng CORES/MEMORY
+#      mặc định của docker-compose.yml vì không đặt biến env cho lệnh này).
+#      Không có bước này, một lần chạy bị lỗi giữa chừng (ví dụ ở cấu hình 1
+#      worker) sẽ để cụm kẹt ở 1 worker mãi mãi — không có lỗi, không cảnh
+#      báo, pipeline lần sau âm thầm chạy trên cụm nhỏ hơn và số liệu sai mà
+#      không ai biết.
+#   2. Xoá file tạm OUT_TMP nếu vòng lặp chưa chạy xong (mv sang OUT chưa xảy
+#      ra) — không để sót file rác, và quan trọng hơn: đảm bảo OUT (kết quả
+#      thật) không hề bị đụng tới khi thí nghiệm dang dở.
+cleanup() {
+  echo "Dọn dẹp: khôi phục cụm Spark về cấu hình mặc định (2 worker)..."
+  if ! $COMPOSE up -d --scale spark-worker=2 spark-worker; then
+    echo "CẢNH BÁO: không khôi phục được cụm về 2 worker mặc định — kiểm tra thủ công bằng 'docker compose ps'." >&2
+  fi
+  if [ -n "$OUT_TMP" ] && [ -f "$OUT_TMP" ]; then
+    rm -f "$OUT_TMP"
+    echo "Dọn dẹp: xoá file tạm $OUT_TMP (thí nghiệm chưa chạy xong nên không đụng tới $OUT)."
+  fi
+}
+trap cleanup EXIT
+# Chuyển tín hiệu ngắt thành 'exit' tường minh để trap EXIT ở trên luôn chạy
+# (bash vẫn gọi trap EXIT sau khi 'exit' được gọi từ trong một trap khác).
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p "$(dirname "$OUT")"
-echo "n_workers,total_cores,run,seconds" > "$OUT"
+OUT_TMP="$(mktemp "$(dirname "$OUT")/scaling.XXXXXX.tmp")"
+echo "n_workers,total_cores,run,seconds" > "$OUT_TMP"
 
 for n in 1 2 4; do
   echo "--- Cấu hình $n worker x 2 core ---"
@@ -53,9 +89,14 @@ for n in 1 2 4; do
     # giờ chạy tới cấu hình 2 hay 4 worker, và không tự khôi phục cụm về 2
     # worker mặc định.
     seconds=$(awk -v a="$start" -v b="$end" 'BEGIN { printf "%.3f", b - a }')
-    echo "$n,$((n * 2)),$run,$seconds" >> "$OUT"
+    echo "$n,$((n * 2)),$run,$seconds" >> "$OUT_TMP"
     echo "  lần $run: ${seconds}s"
   done
 done
 
+# Chỉ tới đây, khi cả 9 phép đo đã ghi xong vào file tạm, mới đổi tên đè lên
+# kết quả thật. Đặt OUT_TMP="" sau đó để cleanup() không xoá nhầm (đường dẫn
+# cũ đã không còn tồn tại sau mv, nhưng đặt rỗng cho tường minh).
+mv "$OUT_TMP" "$OUT"
+OUT_TMP=""
 echo "Ghi kết quả: $OUT"

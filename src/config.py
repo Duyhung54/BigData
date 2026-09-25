@@ -21,6 +21,15 @@ RATINGS_PARQUET = LAKE_DIR / "ratings.parquet"
 MOVIES_PARQUET = LAKE_DIR / "movies.parquet"
 
 MODEL_DIR = OUTPUT_DIR / "model"
+
+# Khi ALS_FIXED_RANK/ALS_FIXED_REG_PARAM được đặt (thí nghiệm đo scale ở Task
+# 11 trong scripts/scaling_experiment.sh), train_als.py không chạy grid search
+# thật nên KHÔNG được ghi vào RESULTS_DIR/tuning.csv hay MODEL_DIR — thí
+# nghiệm gọi train_als.py 9 lần với cùng một tổ hợp, và ghi đè các đường dẫn
+# chính thức sẽ xoá mất lưới tuning 15 dòng đã tốn công chạy trước đó. Xem
+# src/jobs/train_als.py:resolve_output_paths().
+SCALING_RESULTS_DIR = RESULTS_DIR / "scaling_scratch"
+SCALING_MODEL_DIR = OUTPUT_DIR / "model_scaling_scratch"
 RECS_PARQUET = OUTPUT_DIR / "recommendations.parquet"
 RECS_SQLITE = OUTPUT_DIR / "recs.sqlite"
 ITEM_FACTORS_NPY = OUTPUT_DIR / "item_factors.npy"

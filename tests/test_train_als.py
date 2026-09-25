@@ -1,6 +1,7 @@
 import pytest
 
-from src.jobs.train_als import build_als, evaluate_rmse, grid_search
+from src import config
+from src.jobs.train_als import build_als, evaluate_rmse, grid_search, resolve_output_paths
 
 
 def _synthetic_ratings(spark):
@@ -91,3 +92,39 @@ def test_grid_search_honors_fixed_hyperparameters_from_env(spark, monkeypatch):
     assert len(results) == 1
     assert results[0]["rank"] == 7
     assert results[0]["regParam"] == 0.03
+
+
+def test_resolve_output_paths_uses_canonical_dirs_by_default(monkeypatch):
+    """Grid search thật (không đặt ALS_RANK/ALS_REG_PARAM) phải ghi vào đúng
+    nơi Job 3 và report/figures/tuning.png đọc: config.RESULTS_DIR/MODEL_DIR.
+    """
+    monkeypatch.setattr("src.jobs.train_als.config.ALS_FIXED_RANK", None)
+    monkeypatch.setattr("src.jobs.train_als.config.ALS_FIXED_REG_PARAM", None)
+
+    results_dir, model_dir, is_scaling_run = resolve_output_paths()
+
+    assert results_dir == config.RESULTS_DIR
+    assert model_dir == config.MODEL_DIR
+    assert is_scaling_run is False
+
+
+def test_resolve_output_paths_redirects_away_from_canonical_dirs_when_scaling(monkeypatch):
+    """Task 11 (scripts/scaling_experiment.sh) đặt cả hai biến này để đo thời
+    gian một tổ hợp cố định lặp lại 9 lần. Job KHÔNG được ghi đè
+    config.RESULTS_DIR/tuning.csv (lưới tuning thật, 15 dòng) hay
+    config.MODEL_DIR (mô hình đang phục vụ) trong chế độ này.
+    """
+    monkeypatch.setattr("src.jobs.train_als.config.ALS_FIXED_RANK", 10)
+    monkeypatch.setattr("src.jobs.train_als.config.ALS_FIXED_REG_PARAM", 0.1)
+
+    results_dir, model_dir, is_scaling_run = resolve_output_paths()
+
+    assert is_scaling_run is True
+    assert results_dir != config.RESULTS_DIR
+    assert model_dir != config.MODEL_DIR
+    assert results_dir == config.SCALING_RESULTS_DIR
+    assert model_dir == config.SCALING_MODEL_DIR
+    # Cả hai đường scratch phải nằm dưới thư mục kết quả/output đã cấu hình,
+    # không phải một nhánh bịa ra tách biệt hoàn toàn.
+    assert str(results_dir).startswith(str(config.RESULTS_DIR))
+    assert str(model_dir).startswith(str(config.OUTPUT_DIR))
