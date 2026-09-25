@@ -11,6 +11,13 @@
 # fit khác nhau và số liệu tăng tốc theo worker sẽ vô nghĩa.
 set -euo pipefail
 
+# Tắt dịch đường dẫn của MSYS (Git Bash trên Windows) — xem chú thích cùng nội
+# dung trong run_pipeline.sh. Không có dòng này, đường dẫn trong container
+# "/opt/spark/bin/spark-submit" bị dịch thành đường dẫn Windows và job chết với
+# exit 127. Đặt trong script để không phụ thuộc việc người gọi có nhớ export hay
+# không. Vô hại trên Linux/macOS.
+export MSYS_NO_PATHCONV=1
+
 DATASET="${1:-ml-25m}"
 RUNS=3
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -35,7 +42,7 @@ for n in 1 2 4; do
     start=$(date +%s.%N)
     $COMPOSE exec -T spark-master \
       env DATASET="$DATASET" SPARK_MASTER_URL=spark://spark-master:7077 \
-      ALS_RANK=10 ALS_REG_PARAM=0.2 \
+      ALS_RANK=10 ALS_REG_PARAM=0.1 \
       /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
       /opt/app/src/jobs/train_als.py > /dev/null
     end=$(date +%s.%N)
