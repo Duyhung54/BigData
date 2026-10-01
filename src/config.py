@@ -7,18 +7,31 @@ from pathlib import Path
 
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/opt/data"))
 RAW_DIR = DATA_ROOT / "raw"
-LAKE_DIR = DATA_ROOT / "lake"
 OUTPUT_DIR = DATA_ROOT / "output"
 CHECKPOINT_DIR = DATA_ROOT / "checkpoint"
 RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/opt/app/report/results"))
+
+# Gốc của lake Parquet — có thể trỏ sang HDFS ("hdfs://namenode:9000/...").
+# Dùng CHUỖI, không dùng Path: Path("hdfs://namenode:9000") cho ra
+# "hdfs:/namenode:9000" (mất một dấu gạch chéo) và Spark không phân giải được
+# URI — lỗi âm thầm, không có exception. Không đặt biến môi trường thì giá trị
+# y hệt DATA_ROOT/"lake" như cũ, nên số liệu ml-25m đã đo không phải chạy lại.
+LAKE_ROOT = os.environ.get("LAKE_ROOT", str(DATA_ROOT / "lake"))
+
+# Thiết lập phía CLIENT khi Spark ghi vào HDFS (src/session.py). Replication và
+# blocksize của một file do client quyết định lúc ghi, không phải NameNode — nên
+# hai con số này PHẢI khớp docker/hadoop/hdfs-site.xml. Replication = 2 vì cụm
+# chỉ có 2 DataNode; để mặc định 3 thì mọi block đều bị báo under-replicated.
+HDFS_REPLICATION = 2
+HDFS_BLOCKSIZE_BYTES = 128 * 1024 * 1024
 
 # Bộ dữ liệu đang dùng: "ml-25m" cho chạy thật, "ml-latest-small" khi phát triển
 DATASET = os.environ.get("DATASET", "ml-25m")
 
 RATINGS_CSV = RAW_DIR / DATASET / "ratings.csv"
 MOVIES_CSV = RAW_DIR / DATASET / "movies.csv"
-RATINGS_PARQUET = LAKE_DIR / "ratings.parquet"
-MOVIES_PARQUET = LAKE_DIR / "movies.parquet"
+RATINGS_PARQUET = LAKE_ROOT + "/ratings.parquet"
+MOVIES_PARQUET = LAKE_ROOT + "/movies.parquet"
 
 MODEL_DIR = OUTPUT_DIR / "model"
 
@@ -76,3 +89,17 @@ def is_scaling_run() -> bool:
     predicate ở cả hai nơi.
     """
     return ALS_FIXED_RANK is not None and ALS_FIXED_REG_PARAM is not None
+
+
+def is_remote_lake() -> bool:
+    """True khi LAKE_ROOT là URI của một hệ thống file KHÔNG phải local.
+
+    src/jobs/ingest.py dùng nó để biết có được gọi Path.mkdir() hay không
+    (pathlib không hiểu "hdfs://"), và src/session.py dùng nó để đặt
+    replication/blocksize phía client HDFS.
+
+    "file://" tuy là URI nhưng vẫn là hệ thống file cục bộ nên trả về False —
+    coi nó là xa sẽ làm ingest bỏ qua mkdir và lần ghi đầu tiên vào thư mục
+    chưa tồn tại sẽ hỏng.
+    """
+    return "://" in LAKE_ROOT and not LAKE_ROOT.startswith("file://")
