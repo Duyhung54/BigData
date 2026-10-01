@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+  <!-- 2, KHÔNG phải 3: cụm chỉ có 2 DataNode (ngân sách RAM của WSL2).
+       Replication lớn hơn số DataNode làm NameNode báo under-replicated vĩnh viễn.
+
+       Lưu ý: replication của một file do CLIENT quyết định lúc ghi, không phải
+       do giá trị này. Phía Spark đặt lại bằng spark.hadoop.dfs.replication
+       (src/session.py, giá trị lấy từ config.HDFS_REPLICATION) — hai con số
+       phải khớp nhau. -->
+  <property>
+    <name>dfs.replication</name>
+    <value>2</value>
+  </property>
+
+  <!-- 128 MB, khớp TARGET_FILE_MB trong src/jobs/ingest.py để mỗi file
+       Parquet rơi vào đúng một block. Cũng là thiết lập phía client, Spark
+       đặt lại bằng spark.hadoop.dfs.blocksize. -->
+  <property>
+    <name>dfs.blocksize</name>
+    <value>134217728</value>
+  </property>
+
+  <!-- /data là thư mục dữ liệu theo quy ước của image apache/hadoop:
+       /opt/starter.sh chạy "sudo chmod o+rwx /data" lúc khởi động để user
+       "hadoop" (uid 1000) ghi được. Không đặt ở /hadoop/...: thư mục đó
+       không tồn tại và user hadoop không có quyền tạo nó ở gốc "/". -->
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>/data/dfs/name</value>
+  </property>
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>/data/dfs/data</value>
+  </property>
+
+  <!-- BẮT BUỘC. Container Spark chạy uid 185 (user "spark",
+       docker/Dockerfile.spark), container Hadoop chạy user "hadoop" — khác
+       nhau. Không tắt kiểm tra quyền, Spark ghi vào HDFS sẽ bị
+       AccessControlException. Chấp nhận được trong môi trường nghiên cứu
+       một máy; cụm thật phải dùng Kerberos. -->
+  <property>
+    <name>dfs.permissions.enabled</name>
+    <value>false</value>
+  </property>
+</configuration>

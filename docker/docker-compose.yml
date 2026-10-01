@@ -51,3 +51,52 @@ services:
     volumes:
       - ../data:/opt/data
       - ../serving:/opt/app/serving
+
+  # ---------------------------------------------------------------------------
+  # Cụm HDFS cho tầng lake — CHỈ bật khi gọi kèm "--profile hdfs":
+  #   docker compose -f docker/docker-compose.yml --profile hdfs up -d
+  # Không có profile thì stack mặc định (Spark + app) giữ nguyên như trước và
+  # không tốn thêm RAM. Xem docs/superpowers/plans/2026-10-01-hdfs-lake-storage.md.
+  #
+  # EPHEMERAL: không dùng named volume. Hai replica DataNode dùng chung một
+  # volume sẽ tranh nhau in_use.lock; còn NameNode giữ dữ liệu bền mà DataNode
+  # thì không sẽ lệch clusterID và DataNode từ chối đăng ký. "compose down" xoá
+  # sạch dữ liệu HDFS — không sao, scripts/run_pipeline_hdfs.sh chạy lại ingest
+  # mỗi lần.
+  #
+  # apache/hadoop:3.4.1 (không phải 3.3.6 trong plan): bản này có sẵn trên máy.
+  # Spark 3.5.3 mang Hadoop client 3.3.x — giao thức RPC tương thích trong cùng
+  # major version 3.
+  # ---------------------------------------------------------------------------
+  namenode:
+    image: apache/hadoop:3.4.1
+    container_name: namenode
+    hostname: namenode
+    profiles: ["hdfs"]
+    command: ["hdfs", "namenode"]
+    environment:
+      # Ghim heap 512m: mặc định ~1g thừa cho vài nghìn block, mà ngân sách RAM
+      # của WSL2 (12 GB) đã bị Spark chiếm ~10 GB.
+      HDFS_NAMENODE_OPTS: "-Xmx512m"
+      # /opt/starter.sh của image tự "hdfs namenode -format" khi thư mục này
+      # chưa tồn tại — tức ở lần khởi động đầu của mỗi container mới.
+      ENSURE_NAMENODE_DIR: /data/dfs/name
+    ports:
+      - "9870:9870"   # NameNode Web UI
+    volumes:
+      - ./hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+
+  datanode:
+    image: apache/hadoop:3.4.1
+    profiles: ["hdfs"]
+    command: ["hdfs", "datanode"]
+    depends_on:
+      - namenode
+    environment:
+      HDFS_DATANODE_OPTS: "-Xmx512m"
+    volumes:
+      - ./hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    deploy:
+      replicas: 2
