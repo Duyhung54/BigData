@@ -12,6 +12,24 @@
 
 ---
 
+## ⚠️ Sai Lệch Khi Triển Khai (đọc trước các task bên dưới)
+
+Kế hoạch đã được thực thi trên branch `feat/hdfs`. Rà soát trước khi code phát hiện kế hoạch có lỗi; các task bên dưới giữ nguyên để tham khảo, **mã nguồn thật đi theo bảng này**:
+
+| # | Kế hoạch ghi | Đã làm | Lý do |
+|---|---|---|---|
+| 1 | Task 2 đặt `spark.hadoop.fs.defaultFS = hdfs://namenode:9000` khi có `HDFS_NAMENODE` | **Không bao giờ** đổi `fs.defaultFS`; không có biến `HDFS_NAMENODE` | Đổi defaultFS làm mọi đường dẫn không có scheme (raw CSV, `OUTPUT_DIR/model`, checkpoint) bị hiểu là đường dẫn **trên HDFS** — `ingest` không thấy CSV, `shutil.copytree` không thấy model. Lake dùng URI đầy đủ trong `LAKE_ROOT` nên không cần defaultFS |
+| 2 | Không đề cập replication phía client | `_apply_hdfs_config()` đặt `spark.hadoop.dfs.replication=2` và `dfs.blocksize=128MB` khi `config.is_remote_lake()` | Replication của file do **client** quyết định lúc ghi, mặc định 3; cụm có 2 DataNode → mọi block sẽ under-replicated. Đã xác minh: `fsck` báo `Under-replicated blocks: 0` |
+| 3 | "`str()` là no-op nên không cần sửa" | `_dir_bytes(config.RATINGS_PARQUET)` ở `ingest.py:100` **có** hỏng | `_dir_bytes` gọi `.is_file()` trên chuỗi. Không test nào gọi `ingest()` nên suite vẫn xanh — đã thêm test end-to-end đầu tiên cho `ingest()`, nó bắt đúng lỗi này (`'str' object has no attribute 'is_file'`) |
+| 4 | Task 4 hạ `SPARK_WORKER_MEMORY` mặc định 3g → 2g | Giữ 3g; HDFS đặt trong **compose profile `hdfs`** | Hạ mặc định làm thay đổi stack đang chạy tốt. Profile giữ stack mặc định y nguyên, HDFS chỉ tốn RAM khi bật |
+| 5 | `apache/hadoop:3.3.6`, `dfs.*.dir` ở `/hadoop/dfs/...`, named volume cho NameNode | `apache/hadoop:3.4.1`, `/data/dfs/...`, **không** volume (ephemeral) | 3.4.1 có sẵn trên máy (tránh tải ~1,5 GB). Đã kiểm tra image: user `hadoop` (uid 1000) không tạo được `/hadoop` ở gốc; `/data` là thư mục `starter.sh` tự `chmod`. Hai DataNode chung named volume tranh `in_use.lock`; NameNode bền mà DataNode không thì lệch clusterID |
+| 6 | Script HDFS không có kiểm tra dataset | Có cùng phép bảo vệ `--force` như `run_pipeline.sh` | Model, `recs.sqlite`, `report/results/*.csv` vẫn ghi vào đường dẫn local dùng chung — thiếu kiểm tra là lặp lại lỗi mất dữ liệu số 4 của dự án |
+| 7 | Sao lưu chỉ `report/results/` | Sao lưu `data/lake`, `data/output`, `report/results` kèm MD5 vào `data/_backup_before_hdfs/` | Pipeline còn ghi đè `recs.sqlite` (demo ml-25m) và lake local |
+
+Số test: kế hoạch dự tính 91; thực tế **93** (thêm 1 test end-to-end cho `ingest()` và 1 test khẳng định không bao giờ đặt defaultFS).
+
+---
+
 ## Bối Cảnh & Quyết Định Thiết Kế
 
 ### Vấn đề
