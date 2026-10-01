@@ -31,6 +31,25 @@ def _dir_bytes(path: Path) -> int:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
 
+def _path_bytes(spark: SparkSession, path) -> int:
+    """Dung lượng của một file hoặc thư mục, qua Hadoop FileSystem API.
+
+    Khác _dir_bytes (pathlib, chỉ chạy trên hệ thống file cục bộ), hàm này gọi
+    thẳng Hadoop FileSystem qua py4j gateway nên đúng trên mọi scheme Spark hỗ
+    trợ: file://, hdfs://... Cần nó vì khi LAKE_ROOT trỏ sang HDFS,
+    config.RATINGS_PARQUET là chuỗi "hdfs://..." mà pathlib hiểu sai hoàn toàn.
+
+    getContentSummary().getLength() cộng dồn mọi file trong cây thư mục, nên
+    một lời gọi đúng cho cả file đơn lẫn thư mục Parquet nhiều phần. Trên HDFS
+    nó trả dung lượng LOGIC (chưa nhân replication), cùng nghĩa với số đo
+    trên bind mount — so sánh được trực tiếp.
+    """
+    jvm = spark._jvm
+    jpath = jvm.org.apache.hadoop.fs.Path(str(path))
+    fs = jpath.getFileSystem(spark._jsc.hadoopConfiguration())
+    return int(fs.getContentSummary(jpath).getLength())
+
+
 def _n_output_files(csv_bytes: int) -> int:
     """Gộp về các file Parquet ~128 MB.
 
@@ -82,7 +101,10 @@ def ingest(spark: SparkSession) -> dict:
     n_ratings = ratings.count()
     csv_read_seconds = time.perf_counter() - t0
 
-    config.LAKE_DIR.mkdir(parents=True, exist_ok=True)
+    # Chỉ tạo thư mục khi lake ở local. Trên HDFS Spark tự tạo thư mục khi ghi,
+    # và Path.mkdir trên chuỗi "hdfs://..." sẽ tạo thư mục rác tên "hdfs:".
+    if not config.is_remote_lake():
+        Path(config.LAKE_ROOT).mkdir(parents=True, exist_ok=True)
     n_files = _n_output_files(csv_bytes)
     ratings.repartition(n_files).write.mode("overwrite").parquet(str(config.RATINGS_PARQUET))
 
@@ -97,7 +119,7 @@ def ingest(spark: SparkSession) -> dict:
         "dataset": config.DATASET,
         "n_ratings": n_ratings,
         "csv_bytes": csv_bytes,
-        "parquet_bytes": _dir_bytes(config.RATINGS_PARQUET),
+        "parquet_bytes": _path_bytes(spark, config.RATINGS_PARQUET),
         "infer_schema_seconds": round(infer_schema_seconds, 3),
         "csv_read_seconds": round(csv_read_seconds, 3),
         "parquet_read_seconds": round(parquet_read_seconds, 3),

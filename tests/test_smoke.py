@@ -12,8 +12,10 @@ def test_spark_session_counts_rows(spark):
 def test_config_paths_are_under_data_root():
     # Không dùng Path.is_relative_to: nó chỉ có từ Python 3.9, container Spark chạy 3.8
     root = str(config.DATA_ROOT)
-    assert str(config.RATINGS_PARQUET).startswith(root)
     assert str(config.MODEL_DIR).startswith(root)
+    # RATINGS_PARQUET không kiểm tra theo DATA_ROOT: nó có thể trỏ sang HDFS
+    # qua biến môi trường LAKE_ROOT (xem tests/test_config_lake.py).
+    assert config.RATINGS_PARQUET.startswith(config.LAKE_ROOT)
 
 
 def test_get_spark_sets_checkpoint_dir(spark, tmp_path, monkeypatch):

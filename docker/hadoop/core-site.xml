@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Cấu hình phía SERVER của cụm HDFS (NameNode + DataNode).
+
+  KHÔNG mount file này vào container Spark: nếu Spark nhận fs.defaultFS =
+  hdfs://namenode:9000, MỌI đường dẫn không có scheme ("/opt/data/raw/...",
+  "/opt/data/output/model", checkpoint...) sẽ bị hiểu là đường dẫn TRÊN HDFS,
+  ingest không tìm thấy CSV và shutil.copytree trong eligibility.py không
+  thấy model. Spark chỉ chạm tới HDFS qua URI đầy đủ trong LAKE_ROOT.
+-->
+<configuration>
+  <!-- "namenode" là TÊN SERVICE trong docker-compose; DNS nội bộ của Docker
+       phân giải nó thành IP container — không hardcode IP ở đâu cả.
+       DataNode dùng địa chỉ này để tìm NameNode khi đăng ký. -->
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://namenode:9000</value>
+  </property>
+</configuration>

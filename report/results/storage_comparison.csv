@@ -1,0 +1,7 @@
+storage,dataset,run,total_seconds,ingest_parquet_read_seconds,parquet_bytes
+bind_mount,ml-latest-small,1,202.0,0.436,665663
+bind_mount,ml-latest-small,2,203.5,0.563,665663
+bind_mount,ml-latest-small,3,205.2,0.476,665663
+hdfs,ml-latest-small,1,239.3,0.462,665663
+hdfs,ml-latest-small,2,219.7,0.983,665663
+hdfs,ml-latest-small,3,206.2,0.523,665663

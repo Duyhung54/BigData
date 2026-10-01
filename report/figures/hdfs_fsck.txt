@@ -1,0 +1,54 @@
+FSCK started by hadoop (auth:SIMPLE) from /172.21.0.2 for path /movielens/lake at Thu Oct 01 14:53:10 UTC 2026
+
+/movielens/lake <dir>
+/movielens/lake/movies.parquet <dir>
+/movielens/lake/movies.parquet/_SUCCESS 0 bytes, replicated: replication=2, 0 block(s):  OK
+
+/movielens/lake/movies.parquet/part-00000-1d363c22-198e-473c-a24a-d82d76dfc01a-c000.snappy.parquet 247709 bytes, replicated: replication=2, 1 block(s):  OK
+0. BP-654549263-172.21.0.2-1790865877557:blk_1073741826_1002 len=247709 Live_repl=2  [DatanodeInfoWithStorage[172.21.0.4:9866,DS-9c689d53-e225-45a1-b997-19d3c9113566,DISK], DatanodeInfoWithStorage[172.21.0.3:9866,DS-547178f0-b3dd-4dc1-bbe8-e68f683d6dd9,DISK]]
+
+/movielens/lake/ratings.parquet <dir>
+/movielens/lake/ratings.parquet/_SUCCESS 0 bytes, replicated: replication=2, 0 block(s):  OK
+
+/movielens/lake/ratings.parquet/part-00000-5a88f595-fdd0-407c-b106-0393dd20b70a-c000.snappy.parquet 665663 bytes, replicated: replication=2, 1 block(s):  OK
+0. BP-654549263-172.21.0.2-1790865877557:blk_1073741825_1001 len=665663 Live_repl=2  [DatanodeInfoWithStorage[172.21.0.4:9866,DS-9c689d53-e225-45a1-b997-19d3c9113566,DISK], DatanodeInfoWithStorage[172.21.0.3:9866,DS-547178f0-b3dd-4dc1-bbe8-e68f683d6dd9,DISK]]
+
+
+Status: HEALTHY
+ Number of data-nodes:	2
+ Number of racks:		1
+ Total dirs:			3
+ Total symlinks:		0
+
+Replicated Blocks:
+ Total size:	913372 B
+ Total files:	4
+ Total blocks (validated):	2 (avg. block size 456686 B)
+ Minimally replicated blocks:	2 (100.0 %)
+ Over-replicated blocks:	0 (0.0 %)
+ Under-replicated blocks:	0 (0.0 %)
+ Mis-replicated blocks:		0 (0.0 %)
+ Default replication factor:	2
+ Average block replication:	2.0
+ Missing blocks:		0
+ Corrupt blocks:		0
+ Missing replicas:		0 (0.0 %)
+ Blocks queued for replication:	0
+
+Erasure Coded Block Groups:
+ Total size:	0 B
+ Total files:	0
+ Total block groups (validated):	0
+ Minimally erasure-coded block groups:	0
+ Over-erasure-coded block groups:	0
+ Under-erasure-coded block groups:	0
+ Unsatisfactory placement block groups:	0
+ Average block group size:	0.0
+ Missing block groups:		0
+ Corrupt block groups:		0
+ Missing internal blocks:	0
+ Blocks queued for replication:	0
+FSCK ended at Thu Oct 01 14:53:10 UTC 2026 in 8 milliseconds
+
+
+The filesystem under path '/movielens/lake' is HEALTHY

@@ -95,6 +95,56 @@ docker compose -f docker/docker-compose.yml exec spark-master \
   /opt/app/src/jobs/<ten_job>.py
 ```
 
+### Chạy với tầng lake trên HDFS
+
+Cụm HDFS (1 NameNode + 2 DataNode, `apache/hadoop:3.4.1`) nằm trong compose
+**profile `hdfs`** — chỉ bật khi gọi kèm `--profile hdfs`, nên stack mặc định
+ở trên không đổi và không tốn thêm RAM:
+
+```bash
+docker compose -f docker/docker-compose.yml --profile hdfs up -d
+./scripts/run_pipeline_hdfs.sh ml-latest-small
+```
+
+Chỉ **tầng lake** (`ratings.parquet`, `movies.parquet`) nằm trên HDFS, tại
+`hdfs://namenode:9000/movielens/lake`. Raw CSV, `data/output/` (model,
+`recs.sqlite`, `item_factors.npy`) và `data/checkpoint/` vẫn ở local — SQLite
+cần random access và file locking mà HDFS (write-once-read-many) không hỗ trợ,
+còn `src/common/eligibility.py` dùng `shutil.copytree` của Python thuần, không
+hiểu `hdfs://`. Mỗi tầng dùng hệ lưu trữ phù hợp với kiểu truy cập của nó.
+
+Cơ chế: biến môi trường `LAKE_ROOT` (mặc định `/opt/data/lake`) trỏ lake sang
+một URI đầy đủ. Spark **không** đổi `fs.defaultFS` — đổi nó làm mọi đường dẫn
+không có scheme (raw CSV, model, checkpoint) bị hiểu là đường dẫn trên HDFS.
+`src/session.py` chỉ đặt `dfs.replication=2` và `dfs.blocksize=128MB` phía
+client khi lake ở HDFS (replication của một file do client quyết định lúc ghi,
+mặc định 3, trong khi cụm chỉ có 2 DataNode). Không đặt `LAKE_ROOT` thì pipeline
+chạy y hệt như trước.
+
+**Kiểm tra replication và vị trí block:**
+
+```bash
+docker compose -f docker/docker-compose.yml --profile hdfs exec namenode \
+  hdfs fsck /movielens/lake -files -blocks -locations
+```
+
+Kỳ vọng `Status: HEALTHY`, `Under-replicated blocks: 0`, và mỗi block có
+`Live_repl=2` trên hai địa chỉ DataNode khác nhau (kết quả mẫu:
+`report/figures/hdfs_fsck.txt`). NameNode Web UI: http://localhost:9870.
+
+> **Dữ liệu HDFS là tạm thời.** Không dùng named volume (hai DataNode chung
+> volume sẽ tranh khoá `in_use.lock`; NameNode bền mà DataNode không thì lệch
+> clusterID), nên `docker compose down` xoá sạch HDFS. Không sao:
+> `run_pipeline_hdfs.sh` chạy lại `ingest` mỗi lần.
+>
+> **Ngân sách RAM.** Ba JVM Hadoop (heap ghim 512 MB) đo thực tế tốn ~870 MB.
+> Đủ cho `ml-latest-small`; với `ml-25m` nên dựng cụm kèm
+> `SPARK_WORKER_MEMORY=2g` để tránh WSL2 OOM-kill worker giữa chừng.
+>
+> `run_pipeline_hdfs.sh` có cùng phép bảo vệ dataset như `run_pipeline.sh`:
+> model, `recs.sqlite` và `report/results/*.csv` vẫn ghi vào đường dẫn local
+> dùng chung, nên đổi dataset phải kèm `--force`.
+
 ### Đo tốc độ theo số worker (Task 11)
 
 ```bash
@@ -142,3 +192,4 @@ Script này chạy `pytest` bên trong container `spark-master` (cần cụm đ�
 - Spark Master UI: http://localhost:8080 (kỳ vọng thấy 2 worker ở trạng thái ALIVE)
 - Spark Driver UI (khi có job đang chạy qua `spark-submit`): http://localhost:4040
 - API phục vụ gợi ý + demo web (`serving/`, container `movielens-api`): http://localhost:8000
+- NameNode Web UI (khi bật `--profile hdfs`): http://localhost:9870
