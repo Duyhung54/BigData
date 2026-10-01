@@ -108,6 +108,9 @@ ingest → train → evaluate → export ──►  recs.sqlite + item_factors.n
 - Mọi container mount dữ liệu tại **cùng một đường dẫn** `/opt/data` — driver và
   executor phải thấy đường dẫn giống hệt nhau, lệch là `FileNotFoundException`
 - Spark 3.5.3, Python 3.8
+- **Tuỳ chọn HDFS** (compose profile `hdfs`): 1 NameNode + 2 DataNode,
+  `apache/hadoop:3.4.1`, replication = 2, block 128 MB. Chỉ tầng lake đặt trên
+  HDFS — so sánh với bind mount ở §7.5
 
 ### 3.3 Vì sao tách batch và serving
 
@@ -364,6 +367,73 @@ giải thích được.
 - **Máy có tải nền** trong lúc đo (hệ điều hành, Docker Desktop, trình duyệt).
 - **Phép đo bao gồm toàn bộ thời gian job**, kể cả phần khởi động cố định không
   song song hoá được. Đo riêng thời gian fit sẽ cho bức tranh khác.
+
+### 7.5 So sánh hệ lưu trữ: Docker bind mount vs HDFS
+
+**Thiết kế.** Cùng pipeline 4 job, cùng cụm Spark (2 worker × 3 core), chỉ khác
+nơi đặt **tầng lake**: thư mục bind mount `/opt/data/lake` hoặc HDFS
+`hdfs://namenode:9000/movielens/lake` (1 NameNode + 2 DataNode, replication = 2,
+block 128 MB). Chạy **xen kẽ** H-B-H-B-H-B để trôi dạt theo thời gian (nhiệt độ
+máy, tải nền) không dồn lệch về một bên. Dataset `ml-latest-small` — xem hạn chế
+bên dưới.
+
+**Bằng chứng HDFS hoạt động đúng** (`report/figures/hdfs_fsck.txt`):
+`Status: HEALTHY`, `Under-replicated blocks: 0`, mỗi block `Live_repl=2` nằm trên
+hai DataNode khác nhau (`172.21.0.3`, `172.21.0.4`).
+
+| | Bind mount | HDFS (replication = 2) |
+|---|---|---|
+| Thời gian pipeline, 3 lần (s) | 202,0 / 203,5 / 205,2 | 239,3 / 219,7 / 206,2 |
+| **Trung vị** | **203,5 s** | **219,7 s (+8,0%)** |
+| Biên độ | 1,6% | 16% |
+| Đọc lake Parquet trong ingest, trung vị | 0,476 s | 0,523 s (+10%) |
+| Dung lượng lake — logic | 913.372 B | 913.372 B |
+| Dung lượng lake — vật lý trên đĩa | 913.372 B | **1.826.744 B (đúng 2,0×)** |
+
+Nguồn: `report/results/storage_comparison.csv`.
+
+**Đọc bảng — ba điều:**
+
+1. **HDFS chậm hơn, nhưng ít hơn dự đoán (+8% trung vị).** Pipeline này bị chi
+   phối bởi tính toán (15 lần fit ALS trong grid search), không phải I/O — lake
+   chỉ 0,9 MB nên phí đọc/ghi qua HDFS là một phần rất nhỏ trong tổng thời gian.
+2. **Ba lần chạy HDFS nhanh dần đều: 239 → 220 → 206 s.** Lần thứ ba chỉ chậm
+   hơn trung vị bind mount 1,3%. Nhiều khả năng một phần lớn của con số +8% là
+   chi phí khởi động lạnh (JIT của JVM DataNode, page cache). Với 3 lần đo **không
+   tách được** phần khởi động khỏi phần chi phí ổn định — nêu thẳng điều này.
+3. **Dung lượng vật lý gấp đúng 2,0 lần** — đúng bằng replication factor. Đây là
+   cái giá cố định và chắc chắn của HDFS, không phụ thuộc nhiễu đo.
+
+**Nhận định — HDFS trên một máy đơn đem lại gì.** Chịu lỗi và data locality chỉ
+có **về cơ chế**, không có **về vật lý**: hai bản sao nằm trên hai container
+nhưng chung một ổ SSD, ổ hỏng là mất cả hai; "gửi tính toán tới nơi có dữ liệu"
+vô nghĩa khi mọi DataNode đọc cùng một thiết bị. Cái thu được là thật nhưng khác:
+(1) **xác nhận mã nguồn tương thích HDFS** — đổi `LAKE_ROOT` sang cụm nhiều máy
+là chạy, không sửa code; (2) **đo được chi phí của lớp trừu tượng** — +8% thời
+gian (giới hạn trên) và ×2 dung lượng.
+
+Cùng hướng với kết quả §7.2 (thêm worker làm chậm đi): hạ tầng phân tán có chi
+phí cố định, và chi phí đó chỉ được bù lại khi quy mô vượt năng lực một máy.
+
+**Thiết kế đáng nêu — vì sao chỉ lake lên HDFS.** `recs.sqlite` cần random access
+và khoá file, HDFS là write-once-read-many nên **không thể** chứa nó; model và
+checkpoint đi qua `shutil` (Python thuần, không hiểu `hdfs://`). Mỗi tầng dùng hệ
+lưu trữ hợp với kiểu truy cập của nó.
+
+**Một lỗi thiết kế đã tránh — đáng kể trong phần bảo vệ.** Cách "hiển nhiên" là
+đặt `fs.defaultFS = hdfs://namenode:9000` cho Spark. Làm vậy **mọi** đường dẫn
+không có scheme (`/opt/data/raw/...`, model, checkpoint) bị hiểu là đường dẫn trên
+HDFS và pipeline hỏng ngay ở `ingest`. Lời giải: giữ defaultFS là local, trỏ lake
+bằng URI đầy đủ; và đặt `dfs.replication = 2` **phía client** — replication của
+một file do client quyết định lúc ghi (mặc định 3), không phải NameNode. Không đặt
+thì mọi block bị under-replicated (cụm chỉ có 2 DataNode).
+
+**Hạn chế của phép đo:**
+- **`ml-latest-small`, không phải `ml-25m`.** Lake 0,9 MB nằm gọn trong một block;
+  không nói gì về hành vi khi dữ liệu trải trên nhiều block/nhiều DataNode. Không
+  chạy `ml-25m` vì 3 JVM Hadoop cộng Spark sát trần 12 GB RAM của WSL2.
+- **3 lần mỗi bên**, và HDFS có xu hướng giảm dần rõ rệt — cần thêm lần chạy (bỏ
+  lần đầu làm warm-up) để tách chi phí ổn định.
 
 ---
 
