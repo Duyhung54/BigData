@@ -99,6 +99,14 @@ def main() -> None:
     recs.write.mode("overwrite").parquet(str(config.RECS_PARQUET))
     print(f"Ghi Parquet gợi ý: {config.RECS_PARQUET}")
 
+    # Tích hợp thông tin Tag Genome (15.58M records) để phục vụ Explainable AI trên Web UI
+    try:
+        top_tags_df = spark.read.parquet(str(config.MOVIE_TOP_TAGS_PARQUET))
+        movies = movies.join(top_tags_df, "movieId", "left")
+        print("✅ Đã tích hợp Tag Genome đặc trưng vào metadata phim!")
+    except Exception as e:
+        print(f"Bỏ qua Tag Genome: {e}")
+
     recs_pdf = spark.read.parquet(str(config.RECS_PARQUET)).toPandas()
     movies_pdf = movies.toPandas()
     ratings_sample_pdf = top_rated_per_user(ratings).toPandas()

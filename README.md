@@ -53,6 +53,28 @@ cd docker && docker compose up -d --build && cd ..
 docker compose -f docker/docker-compose.yml ps
 ```
 
+### Hai chế độ: có HDFS (mặc định) và không HDFS
+
+Chỉ có **một** file `docker/docker-compose.yml`. File `docker/.env` đặt mặc định
+`COMPOSE_PROFILES=hdfs` và `USE_HDFS=true`, nên lệnh trên dựng **kèm cụm HDFS**
+(`namenode` + `datanode1` + `datanode2`, replication = 2). Ở chế độ này lake
+Parquet, Delta Lake và model nằm trên HDFS; `recs.sqlite`, `item_factors.npy`,
+`item_index.parquet` (file cho web đọc) luôn ở ổ local.
+
+```bash
+# Có HDFS (mặc định) — nạp dữ liệu lịch sử lên HDFS lần đầu:
+scripts\migrate_to_hdfs.bat
+
+# Không HDFS — mọi thứ trên ổ local, giống trước khi có HDFS:
+COMPOSE_PROFILES= USE_HDFS=false docker compose -f docker/docker-compose.yml up -d
+```
+
+- NameNode UI: http://localhost:9870
+- Dữ liệu trên HDFS mất khi `docker compose down` (các container HDFS dùng volume
+  ẩn danh). Dựng lại thì chạy `scripts\migrate_to_hdfs.bat` để nạp lại.
+- Chuyển giữa hai chế độ: `docker compose -f docker/docker-compose.yml down` trước,
+  rồi `up` với chế độ mới.
+
 Mặc định cụm có 2 worker x 3 core x 3 GB, driver 2 GB. Có thể đổi qua biến
 môi trường (dùng ở Task 11 để đo scale):
 

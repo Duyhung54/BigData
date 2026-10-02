@@ -14,7 +14,7 @@ def get_spark(app_name: str, master: Optional[str] = None) -> SparkSession:
     dài và sẽ ném StackOverflowError nếu không được cắt định kỳ.
     """
     master = master or os.environ.get("SPARK_MASTER_URL", "local[*]")
-    spark = (
+    builder = (
         SparkSession.builder
         .appName(app_name)
         .master(master)
@@ -26,8 +26,12 @@ def get_spark(app_name: str, master: Optional[str] = None) -> SparkSession:
         # ml-latest-small, nhưng chạy cả lưới 15 tổ hợp (Task 6) trên ml-25m thì
         # tích tụ hàng chục GB checkpoint mồ côi trong CHECKPOINT_DIR.
         .config("spark.cleaner.referenceTracking.cleanCheckpoints", "true")
-        .getOrCreate()
     )
+    if config.USE_HDFS:
+        # Replication của file do phía GHI quyết định (mặc định 3), cụm chỉ có
+        # 2 DataNode — xem config.HDFS_REPLICATION.
+        builder = builder.config("spark.hadoop.dfs.replication", str(config.HDFS_REPLICATION))
+    spark = builder.getOrCreate()
     config.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     spark.sparkContext.setCheckpointDir(str(config.CHECKPOINT_DIR))
     return spark

@@ -4,7 +4,10 @@ USER root
 
 COPY requirements-spark.txt /tmp/requirements-spark.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-spark.txt
-
+# Chúng ta không tải thủ công file JAR nữa vì nó sẽ bị thiếu các thư viện phụ thuộc
+# (như kafka-clients, commons-pool2, delta-storage).
+# Thay vào đó, chúng ta sẽ dùng cờ --packages khi chạy spark-submit để Spark tự động
+# tải đầy đủ cây thư viện.
 # Image gốc không đặt PYTHONPATH trỏ vào $SPARK_HOME/python, nên chạy
 # "python3 -m pytest" (không qua spark-submit/pyspark) sẽ không import được
 # pyspark. $SPARK_HOME/python/pyspark đã giải nén sẵn nhưng py4j chỉ có dạng

@@ -13,11 +13,38 @@ không cần khởi động lại.
 """
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+import sqlite3
+import json
+import time
+
+from pydantic import BaseModel
+from kafka import KafkaProducer
+
+class RatingEvent(BaseModel):
+    userId: int
+    movieId: int
+    rating: float
+    timestamp: Optional[int] = None
+
+class BatchRatingRequest(BaseModel):
+    events: List[RatingEvent]
+
+_producer = None
+
+def get_kafka_producer():
+    global _producer
+    if _producer is None:
+        _producer = KafkaProducer(
+            bootstrap_servers=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+            value_serializer=lambda v: json.dumps(v).encode('utf-8')
+        )
+    return _producer
 
 from serving.store import Store
 
@@ -30,30 +57,86 @@ STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="MovieLens ALS Recommender")
 
 _store: Optional[Store] = None
+MODEL_PATH = Path("/opt/app/data/output/model/recs.sqlite")
+_last_mtime = 0
+# Optional[...] chứ không dùng "X | None": test chạy trong container Spark
+# (Python 3.8), nơi cú pháp "|" cho kiểu dữ liệu lỗi ngay lúc import module.
+_connection: Optional[sqlite3.Connection] = None
+def get_connection() -> sqlite3.Connection:
+    global _connection, _last_mtime
+    mtime = MODEL_PATH.stat().st_mtime
+    if _connection is None or mtime != _last_mtime:
+        if _connection:
+            _connection.close()
+        _connection = sqlite3.connect(str(MODEL_PATH))
+        _last_mtime = mtime
+        print(f"[API] Reloaded model (mtime={mtime})")
+    return _connection
+@app.get("/recommendations/{user_id}")
+def recommend(user_id: int, k: int = 10):
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT movieId, rating FROM recommendations WHERE userId=? ORDER BY rating DESC LIMIT ?",
+        (user_id, k)
+    )
+    rows = cur.fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="User not found or no recommendations yet")
+    return [{"movieId": r[0], "score": r[1]} for r in rows]
 
+_last_store_mtime = 0
 
 def get_store() -> Store:
     """Trả về Store đã nạp, nạp lần đầu khi được gọi (không nạp lúc import).
-
-    Raise 503 nếu file batch chưa sinh ra thay vì để lỗi mở file rò rỉ thành
-    500 khó hiểu.
+    
+    Tự động nạp lại (hot-reload) Store nếu file recs.sqlite có thời gian chỉnh sửa mới 
+    hơn lần nạp trước (do job streaming vừa chạy xong).
     """
-    global _store
-    if _store is None:
-        missing = [
-            str(p) for p in (RECS_SQLITE, ITEM_FACTORS_NPY, ITEM_INDEX_PARQUET) if not p.exists()
-        ]
-        if missing:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Dữ liệu gợi ý chưa sẵn sàng, còn thiếu: "
-                    + ", ".join(missing)
-                    + ". Hãy chạy pipeline batch (ingest -> train_als -> evaluate -> export_recs) trước."
-                ),
-            )
+    global _store, _last_store_mtime
+    
+    missing = [str(p) for p in (RECS_SQLITE, ITEM_FACTORS_NPY, ITEM_INDEX_PARQUET) if not p.exists()]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Dữ liệu gợi ý chưa sẵn sàng, còn thiếu: "
+                + ", ".join(missing)
+                + ". Hãy chạy pipeline batch trước."
+            ),
+        )
+        
+    current_mtime = RECS_SQLITE.stat().st_mtime
+    if _store is None or current_mtime != _last_store_mtime:
         _store = Store(RECS_SQLITE, ITEM_FACTORS_NPY, ITEM_INDEX_PARQUET)
+        _last_store_mtime = current_mtime
+        print(f"[API] Reloaded Store (mtime={current_mtime})")
+
     return _store
+
+
+@app.post("/api/rate")
+def submit_rating(event: RatingEvent):
+    producer = get_kafka_producer()
+    rating_dict = event.dict()
+    if not rating_dict.get("timestamp"):
+        rating_dict["timestamp"] = int(time.time())
+    producer.send("ratings", rating_dict)
+    producer.flush()
+    return {"status": "success", "event": rating_dict}
+
+
+@app.post("/api/rate/batch")
+def submit_rating_batch(req: BatchRatingRequest):
+    producer = get_kafka_producer()
+    now = int(time.time())
+    for ev in req.events:
+        d = ev.dict()
+        if not d.get("timestamp"):
+            d["timestamp"] = now
+        producer.send("ratings", d)
+    producer.flush()
+    return {"status": "success", "sent": len(req.events)}
 
 
 @app.get("/health")
@@ -93,6 +176,35 @@ def similar(movie_id: int, k: int = Query(10, ge=1, le=50), store: Store = Depen
 @app.get("/api/movies/search")
 def search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, le=50), store: Store = Depends(get_store)):
     return {"query": q, "items": store.search(q, limit)}
+
+
+@app.get("/api/hdfs/stats")
+def hdfs_stats():
+    import urllib.request
+    try:
+        url = "http://namenode:9870/jmx?qry=Hadoop:service=NameNode,name=NameNodeInfo"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            bean = data["beans"][0]
+            live_nodes = json.loads(bean.get("LiveNodes", "{}"))
+            nodes_info = []
+            for node_addr, info in live_nodes.items():
+                nodes_info.append({
+                    "node": node_addr.split(":")[0],
+                    "used_mb": round(info.get("usedSpace", 0) / (1024 * 1024), 2),
+                    "capacity_gb": round(info.get("capacity", 0) / (1024 * 1024 * 1024), 2),
+                    "blocks": info.get("numBlocks", 0),
+                    "lastContact": info.get("lastContact", 0)
+                })
+            return {
+                "status": "online",
+                "total_blocks": bean.get("TotalBlocks", 0),
+                "used_mb": round(bean.get("Used", 0) / (1024 * 1024), 2),
+                "nodes": nodes_info
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e), "nodes": []}
 
 
 @app.get("/api/stats")

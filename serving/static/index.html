@@ -41,12 +41,108 @@
   <h1>Gợi ý phim — MovieLens ALS</h1>
   <div class="stats" id="stats">Đang tải…</div>
 
+  <div class="panel" style="background:#f0fdf4; border:1px solid #86efac;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h2 style="color:#166534; margin:0; font-weight:700; font-size:15px;">📡 Mô phỏng Dữ liệu Stream vào Kafka (Stream Simulator)</h2>
+      <button class="ghost" onclick="toggleManualRate()" style="font-size:12px; padding:3px 8px; border-color:#86efac; color:#166534;">Nhập rating thủ công ▾</button>
+    </div>
+
+    <!-- Vùng kéo thả file -->
+    <div id="dropZone" style="border: 2px dashed #86efac; border-radius: 8px; padding: 18px 12px; text-align: center; background: #fff; cursor: pointer; transition: all 0.2s;">
+      <input type="file" id="streamFileInput" accept=".csv,.txt,.json" style="display:none">
+      <div style="font-size: 26px; margin-bottom: 4px;">📂</div>
+      <div style="font-weight: 600; color: #166534;" id="dropPrompt">Kéo thả file CSV / JSON vào đây hoặc <span style="text-decoration:underline;">bấm để chọn file</span></div>
+      <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Định dạng chuẩn: CSV (userId,movieId,rating) hoặc JSON Lines</div>
+    </div>
+
+    <!-- Tùy chọn điều khiển phát stream -->
+    <div id="streamControls" style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+      <label style="font-size:13px; font-weight:600; color:#166534;">Tốc độ:</label>
+      <select id="streamSpeed" style="padding:6px 10px; border-radius:6px; border:1px solid var(--line); font-size:13px;">
+        <option value="5">5 dòng / giây (Real-time)</option>
+        <option value="20" selected>20 dòng / giây</option>
+        <option value="100">100 dòng / giây</option>
+        <option value="0">Cực nhanh (Gửi batch tối đa)</option>
+      </select>
+
+      <label style="font-size:13px; font-weight:600; color:#166534;">Giới hạn:</label>
+      <select id="streamLimit" style="padding:6px 10px; border-radius:6px; border:1px solid var(--line); font-size:13px;">
+        <option value="50">50 dòng đầu</option>
+        <option value="200" selected>200 dòng</option>
+        <option value="1000">1,000 dòng</option>
+        <option value="9999999">Toàn bộ file</option>
+      </select>
+
+      <button id="btnStartStream" onclick="startStreaming()" style="background:#16a34a; border-color:#16a34a; font-weight:600;" disabled>▶ Bắt đầu Stream</button>
+      <button id="btnStopStream" onclick="stopStreaming()" style="background:#dc2626; border-color:#dc2626; display:none; font-weight:600;">⏹ Dừng lại</button>
+      <button class="ghost" onclick="useSampleData()" style="font-size:13px; border-color:#86efac; color:#166534;">🎲 Dùng dữ liệu mẫu (100 dòng)</button>
+    </div>
+
+    <!-- Thanh tiến trình & Live Metrics -->
+    <div id="streamProgressArea" style="margin-top: 12px; display:none;">
+      <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+        <span id="streamStatusText" style="font-weight:600; color:#166534;">Sẵn sàng</span>
+        <span id="streamCounterText" style="color:var(--muted); font-weight:600;">0 / 0</span>
+      </div>
+      <div style="width:100%; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
+        <div id="streamProgressBar" style="width:0%; height:100%; background:#16a34a; transition: width 0.15s;"></div>
+      </div>
+      <!-- Mini log của các event vừa bắn -->
+      <div id="streamLiveLog" style="margin-top:8px; font-family:monospace; font-size:11px; color:#334155; background:#fff; padding:6px 10px; border-radius:6px; border:1px solid #cbd5e1; max-height:75px; overflow-y:auto;">
+        Chưa có sự kiện nào được phát.
+      </div>
+
+      <!-- Biểu đồ Răng cưa Live: Kafka Buffer Backlog & Spark Micro-batch 10s -->
+      <div id="sawtoothWrapper" style="margin-top:10px; background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <span style="font-weight:700; font-size:12px; color:#1e293b;">📈 Biểu đồ Răng Cưa Thời Gian Thực: Tồn đọng Kafka (Buffer Backlog) & Chu kỳ Spark Ingest</span>
+          <span id="sawtoothLiveBadge" style="font-size:11px; background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:4px; font-weight:600;">Buffer: 0 msg</span>
+        </div>
+        <canvas id="sawtoothCanvas" width="900" height="120" style="width:100%; height:120px; display:block; background:#f8fafc; border-radius:4px;"></canvas>
+        <div style="font-size:11px; color:#64748b; margin-top:4px; display:flex; justify-content:space-between;">
+          <span>⬆ <strong>Dốc lên:</strong> Dữ liệu từ file liên tục đổ vào Kafka Buffer</span>
+          <span>⬇ <strong>Tụt thẳng đứng:</strong> Spark Micro-batch kích hoạt (mỗi 10s), gom sạch ghi vào Delta Lake</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Form nhập rating thủ công (ẩn/hiện) -->
+    <form id="manualRateForm" class="controls" style="margin-top:12px; display:none; border-top:1px dashed #86efac; padding-top:12px; margin-bottom:0;">
+      <input id="rateUserId" type="number" min="1" placeholder="User ID">
+      <input id="rateMovieId" type="number" min="1" placeholder="Movie ID">
+      <input id="rateScore" type="number" step="0.5" min="0.5" max="5.0" placeholder="Điểm (1-5)">
+      <button type="submit" style="background:#2f6f4f; border-color:#2f6f4f;">Gửi 1 rating</button>
+      <span id="rateLog" style="font-size:13px; color:var(--muted); margin-left:10px;"></span>
+    </form>
+  </div>
+
   <div class="controls">
     <input id="userId" type="number" min="1" value="1" placeholder="userId">
     <button onclick="loadUser()">Xem gợi ý</button>
+    <button onclick="toggleChart('chartPanel')" style="background:#4b5563; border-color:#4b5563;">📊 Phân tích xu hướng</button>
+    <button onclick="toggleChart('evalChartPanel')" style="background:#b91c1c; border-color:#b91c1c;">🎯 Thực tế vs Dự đoán</button>
+    <button onclick="toggleChart('streamDistChartPanel')" style="background:#059669; border-color:#059669;">⚡ Dòng Stream & Phân bổ DataNode</button>
     <input id="q" class="search-input" placeholder="Tìm phim…" oninput="doSearch(this.value)">
   </div>
   <div class="suggested" id="suggested"></div>
+
+  <div class="panel" id="chartPanel" style="display:none; text-align:center;">
+    <h2 style="margin-bottom: 10px;">Phân tích Xu hướng Người dùng</h2>
+    <img id="trendChartImg" src="/static/user_trend.png" style="max-width:100%; border-radius:8px; border:1px solid var(--line);">
+  </div>
+
+  <div class="panel" id="evalChartPanel" style="display:none; text-align:center;">
+    <h2 style="margin-bottom: 10px;">Đánh giá: Rating Thực tế vs Dự đoán</h2>
+    <img id="evalChartImg" src="/static/actual_vs_predicted.png" style="max-width:100%; border-radius:8px; border:1px solid var(--line);">
+  </div>
+
+  <div class="panel" id="streamDistChartPanel" style="display:none; text-align:center;">
+    <h2 style="margin-bottom: 10px;">Giám sát Dòng Stream & Phân bổ Dữ liệu trên DataNode HDFS</h2>
+    <div id="hdfsLiveStatus" style="margin-bottom:12px; font-size:13px; color:#166534; background:#f0fdf4; border:1px solid #86efac; border-radius:6px; padding:8px 14px; display:inline-block;">
+      📡 Đang kết nối NameNode JMX để lấy số liệu thực...
+    </div>
+    <img id="streamDistChartImg" src="/static/stream_datanode_distribution.png" style="max-width:100%; border-radius:8px; border:1px solid var(--line);">
+  </div>
 
   <div class="panel" id="searchPanel" style="display:none">
     <h2>Kết quả tìm kiếm</h2>
@@ -153,7 +249,8 @@ function renderMovies(el, items, scoreKey, onClick) {
     div.className = 'movie';
     const score = m[scoreKey] !== undefined ? ` · ${Number(m[scoreKey]).toFixed(2)}` : '';
     const rank = m.rank !== undefined ? `<div class="rank">#${m.rank}</div>` : '';
-    div.innerHTML = `${rank}<div><div class="title"></div><div class="meta"></div></div>`;
+    const tagsHtml = m.top_tags ? `<div style="font-size:11px; color:#2563eb; margin-top:3px; display:flex; flex-wrap:wrap; gap:3px;">${m.top_tags.split(',').slice(0, 4).map(t => `<span style="background:#eff6ff; padding:1px 6px; border-radius:4px; border:1px solid #dbeafe;">🏷️ ${t.trim()}</span>`).join('')}</div>` : '';
+    div.innerHTML = `${rank}<div><div class="title"></div><div class="meta"></div>${tagsHtml}</div>`;
     div.querySelector('.title').textContent = m.title;
     div.querySelector('.meta').textContent = `${m.genres || ''}${score}`;
     if (onClick) div.onclick = () => onClick(m.movieId);
@@ -212,6 +309,12 @@ async function loadUser() {
 }
 
 async function loadSimilar(movieId) {
+  // Tự động điền User ID và Movie ID vào form đánh giá khi bấm vào một phim
+  $('rateMovieId').value = movieId;
+  if ($('userId').value) {
+    $('rateUserId').value = $('userId').value;
+  }
+  
   try {
     const data = await getJSON(`/api/movies/${movieId}/similar?k=10`);
     renderMovies($('similar'), data.items, 'similarity', loadSimilar);
@@ -245,6 +348,392 @@ getJSON('/api/stats').then(s => {
 }).catch(e => { $('stats').className = 'stats error'; $('stats').textContent = friendlyMessage(e); });
 
 loadUser();
+
+// ==================== STREAM SIMULATOR LOGIC ====================
+let parsedStreamEvents = [];
+let isStreaming = false;
+let streamTimer = null;
+
+function toggleManualRate() {
+  const f = $('manualRateForm');
+  f.style.display = f.style.display === 'none' ? 'flex' : 'none';
+}
+
+const dropZone = $('dropZone');
+const fileInput = $('streamFileInput');
+
+dropZone.onclick = () => fileInput.click();
+
+dropZone.ondragover = e => {
+  e.preventDefault();
+  dropZone.style.borderColor = '#16a34a';
+  dropZone.style.background = '#dcfce7';
+};
+
+dropZone.ondragleave = e => {
+  e.preventDefault();
+  dropZone.style.borderColor = '#86efac';
+  dropZone.style.background = '#fff';
+};
+
+dropZone.ondrop = e => {
+  e.preventDefault();
+  dropZone.style.borderColor = '#86efac';
+  dropZone.style.background = '#fff';
+  if (e.dataTransfer.files && e.dataTransfer.files.length) {
+    handleStreamFile(e.dataTransfer.files[0]);
+  }
+};
+
+fileInput.onchange = e => {
+  if (e.target.files && e.target.files.length) {
+    handleStreamFile(e.target.files[0]);
+  }
+};
+
+function parseRatingContent(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const events = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    // Bỏ qua header CSV
+    if (i === 0 && (line.toLowerCase().includes('user') || line.toLowerCase().includes('movie'))) continue;
+    
+    // Hỗ trợ JSON Lines
+    if (line.startsWith('{')) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.userId && obj.movieId && obj.rating !== undefined) {
+          events.push({
+            userId: parseInt(obj.userId),
+            movieId: parseInt(obj.movieId),
+            rating: parseFloat(obj.rating),
+            timestamp: obj.timestamp ? parseInt(obj.timestamp) : Math.floor(Date.now() / 1000)
+          });
+        }
+      } catch (_) {}
+      continue;
+    }
+    
+    // Hỗ trợ CSV (phân cách bởi dấu phẩy, tab, hoặc chấm phẩy)
+    const parts = line.split(/[,\t;]/).map(s => s.trim());
+    if (parts.length >= 3) {
+      const u = parseInt(parts[0]);
+      const m = parseInt(parts[1]);
+      const r = parseFloat(parts[2]);
+      const t = parts[3] ? parseInt(parts[3]) : Math.floor(Date.now() / 1000);
+      if (!isNaN(u) && !isNaN(m) && !isNaN(r)) {
+        events.push({ userId: u, movieId: m, rating: r, timestamp: t });
+      }
+    }
+  }
+  return events;
+}
+
+function handleStreamFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const events = parseRatingContent(e.target.result);
+    if (!events.length) {
+      alert("Không tìm thấy dòng đánh giá hợp lệ trong file (định dạng cần: userId,movieId,rating)!");
+      return;
+    }
+    parsedStreamEvents = events;
+    $('dropPrompt').innerHTML = `✅ Đã nạp <strong>${file.name}</strong> (${events.length.toLocaleString('vi')} bản ghi hợp lệ)`;
+    $('btnStartStream').disabled = false;
+    $('streamProgressArea').style.display = 'block';
+    $('streamCounterText').textContent = `0 / ${events.length.toLocaleString('vi')}`;
+    $('streamProgressBar').style.width = '0%';
+    $('streamStatusText').textContent = 'Sẵn sàng phát dữ liệu';
+    initSawtoothChart();
+  };
+  reader.readAsText(file);
+}
+
+function useSampleData() {
+  const sample = [];
+  const now = Math.floor(Date.now() / 1000);
+  const sampleMovies = [1, 2, 50, 110, 260, 296, 318, 356, 527, 593, 858, 2571, 2959, 4993, 7153];
+  for (let i = 0; i < 100; i++) {
+    sample.push({
+      userId: Math.floor(Math.random() * 50) + 1,
+      movieId: sampleMovies[Math.floor(Math.random() * sampleMovies.length)],
+      rating: (Math.floor(Math.random() * 9) + 2) * 0.5,
+      timestamp: now + i
+    });
+  }
+  parsedStreamEvents = sample;
+  $('dropPrompt').innerHTML = `✅ Đã sinh dữ liệu mẫu ngẫu nhiên (100 bản ghi đánh giá)`;
+  $('btnStartStream').disabled = false;
+  $('streamProgressArea').style.display = 'block';
+  $('streamCounterText').textContent = `0 / 100`;
+  $('streamProgressBar').style.width = '0%';
+  $('streamStatusText').textContent = 'Sẵn sàng phát dữ liệu';
+  initSawtoothChart();
+}
+
+async function startStreaming() {
+  if (!parsedStreamEvents.length || isStreaming) return;
+  isStreaming = true;
+  initSawtoothChart();
+  $('btnStartStream').style.display = 'none';
+  $('btnStopStream').style.display = 'inline-block';
+
+  const limit = parseInt($('streamLimit').value) || 200;
+  const target = parsedStreamEvents.slice(0, limit);
+  const speed = parseInt($('streamSpeed').value); // msg/sec, 0 là batch max
+  const total = target.length;
+  let sent = 0;
+
+  $('streamStatusText').textContent = `⚡ Đang stream vào Kafka...`;
+  $('streamProgressBar').style.background = '#16a34a';
+
+  if (speed === 0) {
+    // Chế độ Batch cực nhanh (chia gói 50 records)
+    const chunkSize = 50;
+    for (let i = 0; i < total; i += chunkSize) {
+      if (!isStreaming) break;
+      const chunk = target.slice(i, i + chunkSize);
+      try {
+        await fetch('/api/rate/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ events: chunk })
+        });
+        sent += chunk.length;
+        updateStreamProgress(sent, total, chunk[chunk.length - 1]);
+      } catch (err) {
+        console.error(err);
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    finishStreaming(sent, total);
+  } else {
+    // Chế độ thời gian thực mô phỏng (gửi đều theo tốc độ)
+    const intervalMs = 250; // mỗi 250ms gửi 1 lần
+    const perInterval = Math.max(1, Math.round(speed * (intervalMs / 1000)));
+
+    streamTimer = setInterval(async () => {
+      if (!isStreaming || sent >= total) {
+        clearInterval(streamTimer);
+        finishStreaming(sent, total);
+        return;
+      }
+
+      const chunk = target.slice(sent, sent + perInterval);
+      try {
+        await fetch('/api/rate/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ events: chunk })
+        });
+        sent += chunk.length;
+        updateStreamProgress(sent, total, chunk[chunk.length - 1]);
+      } catch (err) {
+        console.error(err);
+      }
+
+      if (sent >= total) {
+        clearInterval(streamTimer);
+        finishStreaming(sent, total);
+      }
+    }, intervalMs);
+  }
+}
+
+// ==================== LIVE SAWTOOTH CANVAS CHART ====================
+let sawtoothPoints = [];
+let currentBufferLag = 0;
+let lastBatchCommitTime = Date.now();
+const SPARK_BATCH_CYCLE_MS = 10000; // 10s chu kỳ Micro-batch
+
+function initSawtoothChart() {
+  const canvas = $('sawtoothCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  sawtoothPoints = [];
+  currentBufferLag = 0;
+  lastBatchCommitTime = Date.now();
+  for (let i = 0; i < 40; i++) sawtoothPoints.push(0);
+  drawSawtooth(ctx, canvas);
+}
+
+function updateSawtooth(newItemsCount) {
+  const canvas = $('sawtoothCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  
+  const now = Date.now();
+  currentBufferLag += newItemsCount;
+
+  // Đến mốc 10s -> Spark trigger micro-batch gom sạch buffer
+  if (now - lastBatchCommitTime >= SPARK_BATCH_CYCLE_MS) {
+    currentBufferLag = 0;
+    lastBatchCommitTime = now;
+  }
+
+  sawtoothPoints.push(currentBufferLag);
+  if (sawtoothPoints.length > 50) sawtoothPoints.shift();
+
+  $('sawtoothLiveBadge').textContent = `Buffer: ${currentBufferLag} msg`;
+  drawSawtooth(ctx, canvas);
+}
+
+function drawSawtooth(ctx, canvas) {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Vẽ lưới toạ độ
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = 20; y < h; y += 30) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+  }
+  ctx.stroke();
+
+  if (!sawtoothPoints.length) return;
+
+  const maxVal = Math.max(50, ...sawtoothPoints);
+  const stepX = w / (sawtoothPoints.length - 1);
+
+  // Gradient màu xanh
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
+  grad.addColorStop(1, 'rgba(16, 185, 129, 0.05)');
+
+  // Fill vùng răng cưa
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  for (let i = 0; i < sawtoothPoints.length; i++) {
+    const x = i * stepX;
+    const y = h - (sawtoothPoints[i] / maxVal) * (h - 25);
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Vẽ đường răng cưa chính
+  ctx.beginPath();
+  for (let i = 0; i < sawtoothPoints.length; i++) {
+    const x = i * stepX;
+    const y = h - (sawtoothPoints[i] / maxVal) * (h - 25);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#059669';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Đánh dấu các mốc Spark 10s nuốt sạch buffer
+  for (let i = 1; i < sawtoothPoints.length; i++) {
+    if (sawtoothPoints[i - 1] > 10 && sawtoothPoints[i] === 0) {
+      const dropX = i * stepX;
+      ctx.strokeStyle = '#dc2626';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(dropX, 10);
+      ctx.lineTo(dropX, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      ctx.fillStyle = '#dc2626';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText('⚡ Spark 10s', dropX - 25, 15);
+    }
+  }
+}
+
+function updateStreamProgress(sent, total, lastItem) {
+  const pct = Math.min(100, Math.round((sent / total) * 100));
+  $('streamProgressBar').style.width = pct + '%';
+  $('streamCounterText').textContent = `${sent.toLocaleString('vi')} / ${total.toLocaleString('vi')} (${pct}%)`;
+  if (lastItem) {
+    const timeStr = new Date().toLocaleTimeString();
+    const line = `<div style="padding:1px 0; border-bottom:1px solid #f1f5f9;">[${timeStr}] 👤 user ${lastItem.userId} đánh giá 🎬 phim #${lastItem.movieId} -> ⭐ ${lastItem.rating}</div>`;
+    const logEl = $('streamLiveLog');
+    logEl.innerHTML = line + logEl.innerHTML;
+  }
+  updateSawtooth(lastItem ? 1 : 0);
+}
+
+function finishStreaming(sent, total) {
+  isStreaming = false;
+  if (streamTimer) clearInterval(streamTimer);
+  $('btnStartStream').style.display = 'inline-block';
+  $('btnStopStream').style.display = 'none';
+  if (sent >= total) {
+    $('streamStatusText').innerHTML = `✅ <strong>Hoàn tất!</strong> Đã gửi ${sent} sự kiện vào Kafka. Spark Stream Ingest đang lưu vào Delta Lake.`;
+  } else {
+    $('streamStatusText').innerHTML = `⏸ Đã dừng stream ở ${sent} / ${total} bản ghi.`;
+  }
+}
+
+function stopStreaming() {
+  isStreaming = false;
+  if (streamTimer) clearInterval(streamTimer);
+  $('btnStartStream').style.display = 'inline-block';
+  $('btnStopStream').style.display = 'none';
+  $('streamStatusText').textContent = '⏹ Đã tạm dừng stream.';
+}
+
+// Xử lý gửi 1 rating thủ công
+$('manualRateForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const userId = $('rateUserId').value;
+  const movieId = $('rateMovieId').value;
+  const rating = $('rateScore').value;
+  const logEl = $('rateLog');
+
+  logEl.textContent = "Đang gửi...";
+  try {
+    const res = await fetch('/api/rate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: parseInt(userId), movieId: parseInt(movieId), rating: parseFloat(rating) })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      logEl.textContent = "✅ Đã gửi 1 rating vào Kafka.";
+      $('userId').value = userId;
+    } else {
+      logEl.textContent = "❌ Lỗi: " + JSON.stringify(data);
+    }
+  } catch (err) {
+    logEl.textContent = "❌ Lỗi kết nối: " + err.message;
+  }
+});
+
+function toggleChart(panelId) {
+  const p = $(panelId);
+  if (p.style.display === 'none') {
+    p.style.display = 'block';
+    // Ép tải lại ảnh để tránh cache
+    const img = p.querySelector('img');
+    if (img) img.src = img.src.split('?')[0] + '?t=' + new Date().getTime();
+
+    // Nếu là bảng HDFS -> tự động gọi API lấy số liệu sống thời gian thực
+    if (panelId === 'streamDistChartPanel') {
+      fetch('/api/hdfs/stats').then(r => r.json()).then(d => {
+        if (d.status === 'online') {
+          const nStr = d.nodes.map(n => `<strong>${n.node}</strong>: ${n.used_mb} MB (${n.blocks} blocks)`).join(' · ');
+          $('hdfsLiveStatus').innerHTML = `📡 <strong>Số liệu HDFS Sống (Real-Time JMX):</strong> ${nStr} | <strong>Tổng cụm:</strong> ${d.total_blocks} blocks (${d.used_mb} MB)`;
+        } else {
+          $('hdfsLiveStatus').textContent = '⚠️ Chưa thể kết nối NameNode JMX: ' + (d.message || '');
+        }
+      }).catch(err => {
+        $('hdfsLiveStatus').textContent = '⚠️ Lỗi tải số liệu JMX: ' + err.message;
+      });
+    }
+  } else {
+    p.style.display = 'none';
+  }
+}
 </script>
 </body>
 </html>

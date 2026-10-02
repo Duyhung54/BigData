@@ -6,14 +6,20 @@ from pathlib import Path
 from pyspark.sql import DataFrame, SparkSession
 
 from src import config
-from src.common.schema import RATINGS_SCHEMA, MOVIES_SCHEMA
+from src.common.schema import (
+    RATINGS_SCHEMA, 
+    MOVIES_SCHEMA, 
+    GENOME_SCORES_SCHEMA, 
+    GENOME_TAGS_SCHEMA, 
+    TAGS_SCHEMA, 
+    LINKS_SCHEMA
+)
 from src.session import get_spark
+from pyspark.sql.window import Window
+from pyspark.sql.functions import col, row_number, collect_list, concat_ws
 
 TARGET_FILE_MB = 128
 
-# Tỷ lệ nén CSV -> Parquet+Snappy, đo thực tế trên ml-latest-small: 670883/2483723 = 0.27.
-# Dùng 0.30 cho an toàn. Cần hằng số này vì số file phải quyết định TRƯỚC khi ghi,
-# mà lúc đó chưa biết dung lượng Parquet thật.
 ESTIMATED_PARQUET_RATIO = 0.30
 
 
@@ -25,7 +31,28 @@ def read_movies_csv(spark: SparkSession, path: str) -> DataFrame:
     return spark.read.csv(path, header=True, schema=MOVIES_SCHEMA, escape='"')
 
 
-def _dir_bytes(path: Path) -> int:
+def read_genome_scores_csv(spark: SparkSession, path: str) -> DataFrame:
+    return spark.read.csv(path, header=True, schema=GENOME_SCORES_SCHEMA)
+
+
+def read_genome_tags_csv(spark: SparkSession, path: str) -> DataFrame:
+    return spark.read.csv(path, header=True, schema=GENOME_TAGS_SCHEMA)
+
+
+def read_tags_csv(spark: SparkSession, path: str) -> DataFrame:
+    return spark.read.csv(path, header=True, schema=TAGS_SCHEMA, escape='"')
+
+
+def read_links_csv(spark: SparkSession, path: str) -> DataFrame:
+    return spark.read.csv(path, header=True, schema=LINKS_SCHEMA)
+
+
+def _dir_bytes(path) -> int:
+    if isinstance(path, str) and path.startswith("hdfs://"):
+        return 0  # HDFS bytes checking skipped for demo
+    path = Path(str(path))
+    if not path.exists():
+        return 0
     if path.is_file():
         return path.stat().st_size
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
@@ -88,6 +115,38 @@ def ingest(spark: SparkSession) -> dict:
 
     movies = read_movies_csv(spark, str(config.MOVIES_CSV))
     movies.coalesce(1).write.mode("overwrite").parquet(str(config.MOVIES_PARQUET))
+
+    # Nạp các bảng mở rộng của MovieLens 25M
+    if config.GENOME_SCORES_CSV.exists():
+        print(f"Đang nạp genome-scores.csv (15.58M dòng) lên HDFS...")
+        genome_scores = read_genome_scores_csv(spark, str(config.GENOME_SCORES_CSV))
+        genome_scores.repartition(4).write.mode("overwrite").parquet(str(config.GENOME_SCORES_PARQUET))
+
+    if config.GENOME_TAGS_CSV.exists():
+        print(f"Đang nạp genome-tags.csv lên HDFS...")
+        genome_tags = read_genome_tags_csv(spark, str(config.GENOME_TAGS_CSV))
+        genome_tags.coalesce(1).write.mode("overwrite").parquet(str(config.GENOME_TAGS_PARQUET))
+
+    if config.TAGS_CSV.exists():
+        print(f"Đang nạp tags.csv (1.09M dòng) lên HDFS...")
+        tags = read_tags_csv(spark, str(config.TAGS_CSV))
+        tags.coalesce(2).write.mode("overwrite").parquet(str(config.TAGS_PARQUET))
+
+    if config.LINKS_CSV.exists():
+        print(f"Đang nạp links.csv lên HDFS...")
+        links = read_links_csv(spark, str(config.LINKS_CSV))
+        links.coalesce(1).write.mode("overwrite").parquet(str(config.LINKS_PARQUET))
+
+    # Trích xuất Top-5 Tag đặc trưng của từng phim (dùng cho Explainable AI)
+    if config.GENOME_SCORES_CSV.exists() and config.GENOME_TAGS_CSV.exists():
+        print("Đang trích xuất Top-5 Tags đặc trưng cho từng phim...")
+        w = Window.partitionBy("movieId").orderBy(col("relevance").desc())
+        ranked = genome_scores.join(genome_tags, "tagId") \
+            .withColumn("rn", row_number().over(w)) \
+            .filter(col("rn") <= 5)
+        top_tags = ranked.groupBy("movieId").agg(concat_ws(", ", collect_list("tag")).alias("top_tags"))
+        top_tags.coalesce(1).write.mode("overwrite").parquet(str(config.MOVIE_TOP_TAGS_PARQUET))
+        print("Đã lưu bảng movie_top_tags lên HDFS thành công!")
 
     t0 = time.perf_counter()
     spark.read.parquet(str(config.RATINGS_PARQUET)).count()

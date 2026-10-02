@@ -18,3 +18,27 @@ MOVIES_SCHEMA = T.StructType([
     T.StructField("title", T.StringType(), True),
     T.StructField("genres", T.StringType(), True),
 ])
+
+GENOME_SCORES_SCHEMA = T.StructType([
+    T.StructField("movieId", T.IntegerType(), True),
+    T.StructField("tagId", T.IntegerType(), True),
+    T.StructField("relevance", T.DoubleType(), True),
+])
+
+GENOME_TAGS_SCHEMA = T.StructType([
+    T.StructField("tagId", T.IntegerType(), True),
+    T.StructField("tag", T.StringType(), True),
+])
+
+TAGS_SCHEMA = T.StructType([
+    T.StructField("userId", T.IntegerType(), True),
+    T.StructField("movieId", T.IntegerType(), True),
+    T.StructField("tag", T.StringType(), True),
+    T.StructField("timestamp", T.LongType(), True),
+])
+
+LINKS_SCHEMA = T.StructType([
+    T.StructField("movieId", T.IntegerType(), True),
+    T.StructField("imdbId", T.StringType(), True),
+    T.StructField("tmdbId", T.IntegerType(), True),
+])

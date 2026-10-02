@@ -30,10 +30,16 @@ class Store:
         if not movie_ids:
             return {}
         placeholders = ",".join("?" for _ in movie_ids)
-        rows = self._conn.execute(
-            f"SELECT movieId, title, genres FROM movies WHERE movieId IN ({placeholders})",
-            list(movie_ids),
-        ).fetchall()
+        try:
+            rows = self._conn.execute(
+                f"SELECT movieId, title, genres, COALESCE(top_tags, '') AS top_tags FROM movies WHERE movieId IN ({placeholders})",
+                list(movie_ids),
+            ).fetchall()
+        except Exception:
+            rows = self._conn.execute(
+                f"SELECT movieId, title, genres, '' AS top_tags FROM movies WHERE movieId IN ({placeholders})",
+                list(movie_ids),
+            ).fetchall()
         return {row["movieId"]: dict(row) for row in rows}
 
     def recommendations(self, user_id: int, k: int = 10) -> list:
@@ -50,6 +56,7 @@ class Store:
                 "score": round(row["score"], 4),
                 "title": meta.get(row["movieId"], {}).get("title", "?"),
                 "genres": meta.get(row["movieId"], {}).get("genres", ""),
+                "top_tags": meta.get(row["movieId"], {}).get("top_tags", ""),
             }
             for row in rows
         ]
@@ -72,6 +79,7 @@ class Store:
                 "rating": row["rating"],
                 "title": meta.get(row["movieId"], {}).get("title", "?"),
                 "genres": meta.get(row["movieId"], {}).get("genres", ""),
+                "top_tags": meta.get(row["movieId"], {}).get("top_tags", ""),
             }
             for row in rows
         ]
@@ -103,6 +111,7 @@ class Store:
                 "similarity": round(float(scores[i]), 4),
                 "title": meta.get(mid, {}).get("title", "?"),
                 "genres": meta.get(mid, {}).get("genres", ""),
+                "top_tags": meta.get(mid, {}).get("top_tags", ""),
             }
             for i, mid in zip(top, movie_ids)
         ]
@@ -112,11 +121,18 @@ class Store:
         # tựa phim. Escape bằng '\' (khai báo qua ESCAPE) để chúng được hiểu
         # là ký tự thường trong chuỗi người dùng nhập, không phải wildcard.
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        rows = self._conn.execute(
-            "SELECT movieId, title, genres FROM movies WHERE title LIKE ? ESCAPE '\\' "
-            "ORDER BY LENGTH(title) LIMIT ?",
-            (f"%{escaped}%", limit),
-        ).fetchall()
+        try:
+            rows = self._conn.execute(
+                "SELECT movieId, title, genres, COALESCE(top_tags, '') AS top_tags FROM movies WHERE title LIKE ? ESCAPE '\\' "
+                "ORDER BY LENGTH(title) LIMIT ?",
+                (f"%{escaped}%", limit),
+            ).fetchall()
+        except Exception:
+            rows = self._conn.execute(
+                "SELECT movieId, title, genres, '' AS top_tags FROM movies WHERE title LIKE ? ESCAPE '\\' "
+                "ORDER BY LENGTH(title) LIMIT ?",
+                (f"%{escaped}%", limit),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def stats(self) -> dict:

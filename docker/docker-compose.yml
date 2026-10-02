@@ -1,4 +1,57 @@
+
+# Một file, hai chế độ:
+#   - Mặc định (docker/.env đặt COMPOSE_PROFILES=hdfs, USE_HDFS=true):
+#       docker compose -f docker/docker-compose.yml up -d
+#     → chạy kèm cụm HDFS (namenode + datanode1 + datanode2); lake, Delta Lake
+#       và model của Spark nằm trên HDFS.
+#   - Không HDFS (ghi đè hai biến của .env):
+#       COMPOSE_PROFILES= USE_HDFS=false docker compose -f docker/docker-compose.yml up -d
+#     → giống hệt trước khi có HDFS, mọi thứ trên ổ local.
+# recs.sqlite, item_factors.npy, item_index.parquet (file cho web đọc) LUÔN ở local.
+
 services:
+  # ==========================================
+  # CỤM HDFS — chỉ chạy khi profile "hdfs" được bật
+  # ==========================================
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    profiles: ["hdfs"]
+    ports:
+      - "9870:9870" # Giao diện Web HDFS
+      - "9000:9000" # Cổng giao tiếp Spark <-> HDFS
+    environment:
+      - CLUSTER_NAME=movielens-hdfs
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      # Container Spark chạy bằng user "spark", khác user của Hadoop. Bật kiểm tra
+      # quyền (mặc định của Hadoop) thì Spark bị từ chối khi tạo /opt/data/... trên
+      # HDFS — trước đây phải tự mkdir + chmod 777 trong migrate_to_hdfs.bat.
+      - HDFS_CONF_dfs_permissions_enabled=false
+      # Chỉ có 2 DataNode; mặc định 3 làm mọi block bị under-replicated.
+      # Phía Spark đặt cùng giá trị qua config.HDFS_REPLICATION.
+      - HDFS_CONF_dfs_replication=2
+
+  datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode1
+    profiles: ["hdfs"]
+    depends_on:
+      - namenode
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+
+  datanode2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode2
+    profiles: ["hdfs"]
+    depends_on:
+      - namenode
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+
+  # ==========================================
+  # CỤM SPARK
+  # ==========================================
   spark-master:
     build:
       context: ..
@@ -9,10 +62,11 @@ services:
     environment:
       SPARK_MASTER_URL: spark://spark-master:7077
       PYTHONPATH: /opt/app:/opt/spark/python:/opt/spark/python/lib/py4j-src.zip
+      USE_HDFS: "${USE_HDFS:-false}"
     ports:
-      - "8080:8080"   # Master UI
-      - "7077:7077"   # Master RPC
-      - "4040:4040"   # Driver UI khi chạy spark-submit
+      - "8080:8080"
+      - "7077:7077"
+      - "4040:4040"
     volumes:
       - ../data:/opt/data
       - ../src:/opt/app/src
@@ -32,6 +86,7 @@ services:
       SPARK_WORKER_CORES: "${SPARK_WORKER_CORES:-3}"
       SPARK_WORKER_MEMORY: "${SPARK_WORKER_MEMORY:-3g}"
       PYTHONPATH: /opt/app:/opt/spark/python:/opt/spark/python/lib/py4j-src.zip
+      USE_HDFS: "${USE_HDFS:-false}"
     deploy:
       replicas: ${SPARK_WORKER_REPLICAS:-2}
     volumes:
@@ -39,6 +94,125 @@ services:
       - ../src:/opt/app/src
       - ../report:/opt/app/report
 
+  # ==========================================
+  # KAFKA
+  # ==========================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_JMX_HOSTNAME: localhost
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep Mode"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Cơ chế tự hủy chặt chẽ: Xóa phân đoạn sau 30 phút hoặc khi vượt quá 200MB
+      KAFKA_LOG_CLEANUP_POLICY: delete
+      KAFKA_LOG_RETENTION_MINUTES: 30
+      KAFKA_LOG_RETENTION_BYTES: 209715200
+      KAFKA_LOG_SEGMENT_BYTES: 20971520
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 30000
+    ports:
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ==========================================
+  # STREAMING
+  # ==========================================
+  stream-ingest:
+    image: movielens-spark:latest
+    # spark.cores.max=2: job streaming chạy MÃI. Ở chế độ standalone, mỗi app mặc
+    # định chiếm HẾT core trống (6 core = 2 worker × 3) và không trả lại — mọi job
+    # khác (ingest, run_pipeline.sh, train-als-stream) phải xếp hàng chờ mãi.
+    # Giới hạn 2 core để còn 4 core cho các job còn lại.
+    command: >
+      /opt/spark/bin/spark-submit
+      --master spark://spark-master:7077
+      --conf spark.cores.max=2
+      --conf spark.jars.ivy=/tmp/.ivy2
+      --packages io.delta:delta-spark_2.12:3.2.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3
+      /opt/app/src/jobs/stream_ingest.py
+    depends_on:
+      kafka:
+        condition: service_healthy
+      spark-master:
+        condition: service_started
+      # required: false — không bật profile "hdfs" thì namenode không tồn tại;
+      # thiếu dòng này Compose báo "depends on undefined service" và từ chối chạy
+      # CẢ cụm, kể cả ở chế độ không HDFS.
+      namenode:
+        condition: service_started
+        required: false
+    environment:
+      PYTHONPATH: /opt/app:/opt/spark/python:/opt/spark/python/lib/py4j-src.zip
+      USE_HDFS: "${USE_HDFS:-false}"
+    volumes:
+      - ../data:/opt/data
+      - ../src:/opt/app/src
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  train-als-stream:
+    image: movielens-spark:latest
+    command: >
+      bash -c "while true; do
+        /opt/spark/bin/spark-submit --master spark://spark-master:7077 --driver-memory 2g --conf spark.jars.ivy=/tmp/.ivy2 --packages io.delta:delta-spark_2.12:3.2.0 /opt/app/src/jobs/train_als_stream.py;
+        rm -rf /tmp/blockmgr-* /tmp/spark-*;
+        echo 'Waiting 60 seconds before next training cycle...';
+        sleep 60;
+      done"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      spark-master:
+        condition: service_started
+      namenode:
+        condition: service_started
+        required: false
+    environment:
+      PYTHONPATH: /opt/app:/opt/spark/python:/opt/spark/python/lib/py4j-src.zip
+      USE_HDFS: "${USE_HDFS:-false}"
+      # BẮT BUỘC: train_als_stream.py tạo SparkSession qua src/session.py, hàm này
+      # gọi .master(SPARK_MASTER_URL) với mặc định "local[*]" — và giá trị đó ĐÈ
+      # LÊN "--master" của spark-submit ở trên. Thiếu biến này, ALS chạy local
+      # trong riêng container này với 2 GB RAM thay vì trên 2 worker của cụm.
+      SPARK_MASTER_URL: spark://spark-master:7077
+    volumes:
+      - ../data:/opt/data
+      - ../src:/opt/app/src
+      - ../report:/opt/app/report
+    deploy:
+      restart_policy:
+        condition: any
+
+  # ==========================================
+  # WEB — luôn đọc file ở ổ local, không dùng HDFS
+  # ==========================================
   app:
     build:
       context: ..
