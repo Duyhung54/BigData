@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Vận Hành & Demo Cụm Big Data{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- TIÊU ĐỀ TRANG -->
+  <div class="pb-6 border-b border-zinc-800">
+    <h1 class="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+      <span>TRUNG TÂM VẬN HÀNH & ĐIỀU KHIỂN DEMO</span>
+      <span class="text-xs bg-purple-500/20 text-purple-400 border border-purple-500/40 font-semibold px-2.5 py-0.5 rounded uppercase">
+        Live Simulation
+      </span>
+    </h1>
+    <p class="text-sm text-zinc-400 mt-1">
+      Công cụ điều phối và mô phỏng tương tác thực nghiệm cho buổi thuyết trình và bảo vệ đồ án.
+    </p>
+  </div>
+
+  <!-- LƯỚI 3 HÀNH ĐỘNG CỐT LÕI -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+    <!-- KHỐI 1: BATCH ALS 32M -->
+    <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 shadow-xl flex flex-col justify-between space-y-6">
+      <div class="space-y-3">
+        <div class="w-12 h-12 rounded-lg bg-netflixRed/20 border border-netflixRed/40 flex items-center justify-center text-2xl">
+          ⚡
+        </div>
+        <h3 class="text-lg font-bold text-white">1. Huấn Luyện Batch ALS 32M</h3>
+        <p class="text-xs text-zinc-400 leading-relaxed">
+          Kích hoạt job Spark Batch trên cụm HDFS 3 DataNode, phân chia Temporal Split 80/10/10, tối ưu ALS và xuất Top-20 vào PostgreSQL qua JDBC.
+        </p>
+      </div>
+
+      <div class="space-y-3 pt-4 border-t border-zinc-800/80">
+        <div class="bg-zinc-950 p-2.5 rounded font-mono text-[11px] text-zinc-300 break-all border border-zinc-800">
+          spark-submit /opt/app/src/jobs/train_als.py
+        </div>
+        <button onclick="triggerBatchAls()" id="btn-batch"
+                class="w-full bg-netflixRed hover:bg-red-700 text-white font-bold text-sm py-2.5 rounded-lg transition-all shadow-md active:scale-95 flex items-center justify-center gap-2">
+          <span>🚀 Chạy Batch ALS Ngay</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- KHỐI 2: STREAM EVENT GENERATOR (BẮN 100 SỰ KIỆN KAFKA) -->
+    <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 shadow-xl flex flex-col justify-between space-y-6">
+      <div class="space-y-3">
+        <div class="w-12 h-12 rounded-lg bg-netflixGreen/20 border border-netflixGreen/40 flex items-center justify-center text-2xl">
+          📡
+        </div>
+        <h3 class="text-lg font-bold text-white">2. Bắn 100 Sự Kiện Stream</h3>
+        <p class="text-xs text-zinc-400 leading-relaxed">
+          Mô phỏng người dùng liên tục chấm điểm phim theo thời gian thực. Đẩy 100 sự kiện vào Kafka topic <code class="text-netflixGreen">user_events</code> để kiểm tra Spark Streaming trượt cửa sổ 1h.
+        </p>
+      </div>
+
+      <div class="space-y-3 pt-4 border-t border-zinc-800/80">
+        <!-- Progress Bar -->
+        <div id="stream-progress-box" class="hidden space-y-1">
+          <div class="flex justify-between text-[11px] text-zinc-400">
+            <span>Tiến độ bắn sự kiện:</span>
+            <span id="stream-progress-text" class="font-bold text-netflixGreen">0/100</span>
+          </div>
+          <div class="w-full bg-zinc-950 rounded-full h-2 overflow-hidden border border-zinc-800">
+            <div id="stream-progress-bar" class="bg-netflixGreen h-full w-0 transition-all duration-100"></div>
+          </div>
+        </div>
+
+        <button onclick="simulateStreamEvents()" id="btn-stream"
+                class="w-full bg-netflixGreen hover:bg-emerald-600 text-black font-bold text-sm py-2.5 rounded-lg transition-all shadow-md active:scale-95 flex items-center justify-center gap-2">
+          <span>⚡ Bắn 100 Sự Kiện Kafka</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- KHỐI 3: MÔ PHỎNG CLICK ONLINE & BOOST PREFERENCE -->
+    <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 shadow-xl flex flex-col justify-between space-y-6">
+      <div class="space-y-3">
+        <div class="w-12 h-12 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl">
+          🎯
+        </div>
+        <h3 class="text-lg font-bold text-white">3. Mô Phỏng Click Online</h3>
+        <p class="text-xs text-zinc-400 leading-relaxed">
+          Ghi nhận hành vi tương tác click của người dùng trong phiên, cập nhật trực tiếp điểm số Trending và sở thích trực tuyến vào Redis In-Memory.
+        </p>
+      </div>
+
+      <div class="space-y-3 pt-4 border-t border-zinc-800/80">
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <label class="text-[10px] text-zinc-400">UserID:</label>
+            <input type="number" id="clickUserId" value="1" class="w-full bg-zinc-950 border border-zinc-700 rounded p-1.5 text-white">
+          </div>
+          <div>
+            <label class="text-[10px] text-zinc-400">MovieID:</label>
+            <input type="number" id="clickMovieId" value="296" class="w-full bg-zinc-950 border border-zinc-700 rounded p-1.5 text-white">
+          </div>
+        </div>
+        <button onclick="simulateClickBoost()" id="btn-click"
+                class="w-full bg-amber-500 hover:bg-amber-600 text-black font-bold text-sm py-2.5 rounded-lg transition-all shadow-md active:scale-95 flex items-center justify-center gap-2">
+          <span>🔥 Click & Boost Điểm Redis</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CONSOLE LOG TRỰC QUAN -->
+  <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-6 shadow-2xl">
+    <div class="flex items-center justify-between pb-3 border-b border-zinc-800 mb-3">
+      <span class="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-netflixGreen"></span>
+        Nhật Ký Tác Vụ Thời Gian Thực (Activity Terminal)
+      </span>
+      <button onclick="clearConsole()" class="text-xs text-zinc-500 hover:text-zinc-300">Xóa log</button>
+    </div>
+    <div id="terminal-log" class="font-mono text-xs text-zinc-300 space-y-1.5 max-h-56 overflow-y-auto pr-2">
+      <div class="text-zinc-500">[HỆ THỐNG] Cụm Big Data đã sẵn sàng phục vụ demo.</div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function appendLog(msg, color = 'text-zinc-300') {
+    const term = document.getElementById('terminal-log');
+    const timeStr = new Date().toLocaleTimeString();
+    const line = document.createElement('div');
+    line.className = color;
+    line.innerHTML = `<span class="text-zinc-600">[${timeStr}]</span> ${msg}`;
+    term.appendChild(line);
+    term.scrollTop = term.scrollHeight;
+  }
+
+  function clearConsole() {
+    document.getElementById('terminal-log').innerHTML = '';
+  }
+
+  // 1. Chạy Batch ALS
+  function triggerBatchAls() {
+    appendLog("Đã gửi yêu cầu khởi chạy Batch ALS trên cụm Spark Master...", "text-netflixRed");
+    appendLog("Để quan sát tiến trình huấn luyện chi tiết 32M ratings, hãy mở terminal chạy: docker exec -it spark-master /opt/spark/bin/spark-submit /opt/app/src/jobs/train_als.py", "text-amber-300");
+    showToast("Đã kích hoạt thông báo Job Batch ALS", "info");
+  }
+
+  // 2. Bắn 100 sự kiện Stream vào Kafka
+  async function simulateStreamEvents() {
+    const btn = document.getElementById('btn-stream');
+    const progressBox = document.getElementById('stream-progress-box');
+    const progressText = document.getElementById('stream-progress-text');
+    const progressBar = document.getElementById('stream-progress-bar');
+
+    btn.disabled = true;
+    btn.classList.add('opacity-50');
+    progressBox.classList.remove('hidden');
+
+    appendLog("BẮT ĐẦU BẮN 100 SỰ KIỆN TƯƠNG TÁC VÀO KAFKA TOPIC 'user_events'...", "text-netflixGreen");
+
+    const sampleMovies = [296, 318, 356, 593, 260, 480, 110, 2571, 589, 527, 1, 1196, 1210, 858, 50];
+    let successCount = 0;
+
+    for (let i = 1; i <= 100; i++) {
+      const randomMovie = sampleMovies[Math.floor(Math.random() * sampleMovies.length)];
+      const randomUser = Math.floor(Math.random() * 500) + 1;
+      const randomRating = (Math.floor(Math.random() * 5) + 6) / 2.0; // 3.0 to 5.0
+
+      try {
+        const res = await fetch('/api/rate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: randomUser, movieId: randomMovie, rating: randomRating })
+        });
+        if (res.ok) successCount++;
+      } catch (err) {
+        console.error(err);
+      }
+
+      // Cập nhật thanh tiến trình
+      progressText.textContent = `${i}/100`;
+      progressBar.style.width = `${i}%`;
+
+      if (i % 25 === 0) {
+        appendLog(`Đã bắn thành công ${i}/100 sự kiện vào Kafka...`, "text-zinc-400");
+      }
+    }
+
+    appendLog(`HOÀN TẤT: Đã đẩy ${successCount}/100 sự kiện vào Kafka. Spark Streaming đang tính toán sliding window.`, "text-netflixGreen");
+    showToast("Đã bắn 100 sự kiện vào Kafka! Mở Tab Dashboard để xem Trending nhảy số.", "success");
+
+    btn.disabled = false;
+    btn.classList.remove('opacity-50');
+  }
+
+  // 3. Click Boost vào Redis
+  async function simulateClickBoost() {
+    const uId = parseInt(document.getElementById('clickUserId').value) || 1;
+    const mId = parseInt(document.getElementById('clickMovieId').value) || 296;
+
+    try {
+      const res = await fetch('/api/click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: uId, movieId: mId, position: 1 })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        appendLog(`[REDIS ONLINE PREF] ${data.message}`, "text-amber-400");
+        showToast("Đã boost thành công! Hãy F5 Tab Dashboard để xem điểm mới.", "success");
+      } else {
+        showToast("Lỗi kết nối Redis", "error");
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối Spark/Redis", "error");
+    }
+  }
+</script>
+{% endblock %}

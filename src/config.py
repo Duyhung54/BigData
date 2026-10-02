@@ -1,80 +1,90 @@
-"""Tập trung mọi đường dẫn và hằng số cấu hình.
-
+"""Tập trung mọi đường dẫn và hằng số cấu hình hệ thống Big Data.
 Không hardcode đường dẫn hay ngưỡng ở bất kỳ file nào khác.
 """
 import os
 from pathlib import Path
 
-# ---------- Cấu Hình Storage (Local vs HDFS) ----------
+# ---------- Cấu hình Storage (Local & HDFS) ----------
 LOCAL_DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/opt/data"))
+USE_HDFS = os.environ.get("USE_HDFS", "true").lower() == "true"
+HDFS_NAMENODE = os.environ.get("HDFS_NAMENODE", "hdfs://namenode:9000")
 
-# Nếu USE_HDFS=true, Spark sẽ lưu file lớn (Parquet, Delta, Model) lên HDFS
-USE_HDFS = os.environ.get("USE_HDFS", "false").lower() == "true"
-HDFS_PREFIX = "hdfs://namenode:9000" if USE_HDFS else ""
+# Chuẩn HDFS 128 MB và Replication 3 cho 3 DataNodes
+HDFS_REPLICATION = 3
+HDFS_BLOCKSIZE = 134217728  # 128 MB (128 * 1024 * 1024 bytes)
 
-# Đường dẫn dùng cho Spark (Chuỗi string để ghép với HDFS)
-DATA_ROOT_STR = HDFS_PREFIX + "/opt/data"
-LAKE_DIR_STR = DATA_ROOT_STR + "/lake"
-OUTPUT_DIR_STR = DATA_ROOT_STR + "/output"
-CHECKPOINT_DIR_STR = DATA_ROOT_STR + "/checkpoint"
+# Đường dẫn HDFS
+HDFS_PATH = f"{HDFS_NAMENODE}/processed/"
+HDFS_RAW_PATH = f"{HDFS_NAMENODE}/raw/"
 
-# Đường dẫn dùng cho Local/FastAPI/SQLite (Kiểu Path)
+# Đường dẫn Local (Mount Volume)
 DATA_ROOT = LOCAL_DATA_ROOT
 RAW_DIR = LOCAL_DATA_ROOT / "raw"
-LAKE_DIR = LOCAL_DATA_ROOT / "lake"
 OUTPUT_DIR = LOCAL_DATA_ROOT / "output"
 CHECKPOINT_DIR = LOCAL_DATA_ROOT / "checkpoint"
 RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/opt/app/report/results"))
 
-# ---------- Streaming ----------
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-KAFKA_RATINGS_TOPIC = os.getenv("KAFKA_RATINGS_TOPIC", "ratings")
+# ---------- Bộ dữ liệu MovieLens ----------
+DATASET = os.environ.get("DATASET", "ml-32m")
+RAW_DATASET_DIR = RAW_DIR / DATASET
 
-# Delta lake (giao dịch)
-DELTA_LAKE_PATH = LAKE_DIR_STR + "/ratings_delta"
-DATASET = os.environ.get("DATASET", "ml-25m")
+# 6 file CSV thô đầu vào
+RATINGS_CSV = RAW_DATASET_DIR / "ratings.csv"
+MOVIES_CSV = RAW_DATASET_DIR / "movies.csv"
+TAGS_CSV = RAW_DATASET_DIR / "tags.csv"
+LINKS_CSV = RAW_DATASET_DIR / "links.csv"
+GENOME_SCORES_CSV = RAW_DATASET_DIR / "genome-scores.csv"
+GENOME_TAGS_CSV = RAW_DATASET_DIR / "genome-tags.csv"
 
-RATINGS_CSV = RAW_DIR / DATASET / "ratings.csv"
-MOVIES_CSV = RAW_DIR / DATASET / "movies.csv"
+# 6 file Parquet nén Snappy trên HDFS (hoặc local fallback)
+LAKE_PREFIX = HDFS_PATH if USE_HDFS else str(LOCAL_DATA_ROOT / "lake") + "/"
+RATINGS_PARQUET = LAKE_PREFIX + "ratings.parquet"
+MOVIES_PARQUET = LAKE_PREFIX + "movies.parquet"
+TAGS_PARQUET = LAKE_PREFIX + "tags.parquet"
+LINKS_PARQUET = LAKE_PREFIX + "links.parquet"
+GENOME_SCORES_PARQUET = LAKE_PREFIX + "genome-scores.parquet"
+GENOME_TAGS_PARQUET = LAKE_PREFIX + "genome-tags.parquet"
 
-RATINGS_PARQUET = LAKE_DIR_STR + "/ratings.parquet"
-MOVIES_PARQUET = LAKE_DIR_STR + "/movies.parquet"
+# Delta Lake và Model trên HDFS
+DELTA_LAKE_PATH = LAKE_PREFIX + "ratings_delta"
+MODEL_DIR = (f"{HDFS_NAMENODE}/models/als_model" if USE_HDFS else str(OUTPUT_DIR / "model"))
 
-MODEL_DIR = OUTPUT_DIR_STR + "/model"
-RECS_PARQUET = OUTPUT_DIR_STR + "/recommendations.parquet"
+# ---------- Message Broker & Streaming (Kafka) ----------
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"))
+KAFKA_BOOTSTRAP_SERVERS = KAFKA_BOOTSTRAP
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "user_events")
+KAFKA_RATINGS_TOPIC = KAFKA_TOPIC
 
-# Số bản sao mỗi block khi Spark GHI lên HDFS. Replication do phía ghi (client)
-# quyết định, không phải NameNode — không đặt thì Spark xin mặc định 3 trong khi
-# cụm chỉ có 2 DataNode, mọi block bị báo under-replicated. Phải khớp
-# HDFS_CONF_dfs_replication trong docker/docker-compose.yml.
-HDFS_REPLICATION = 2
+# ---------- Cơ sở dữ liệu Serving (PostgreSQL & Redis) ----------
+POSTGRES_DB = os.getenv("POSTGRES_DB", "movielens_db")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "admin")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "adminpassword")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 
-# ---------- Local Outputs (SQLite & numpy) ----------
-SCALING_RESULTS_DIR = RESULTS_DIR / "scaling_scratch"
-SCALING_MODEL_DIR = OUTPUT_DIR_STR + "/model_scaling_scratch"
-RECS_SQLITE = OUTPUT_DIR / "recs.sqlite"
-ITEM_FACTORS_NPY = OUTPUT_DIR / "item_factors.npy"
-# LUÔN ở local, kể cả khi USE_HDFS=true: đây là file đi cặp với item_factors.npy
-# cho web (serving/api.py) đọc từ /opt/data/output. Trước đây nó nhận tiền tố
-# HDFS nên export_recs ghi lên HDFS (bằng pandas — vốn không ghi thẳng HDFS được)
-# trong khi web vẫn đọc bản local cũ: "phim tương tự" trả sai phim.
-ITEM_INDEX_PARQUET = OUTPUT_DIR / "item_index.parquet"
+POSTGRES_URI = os.getenv(
+    "POSTGRES_URI",
+    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+POSTGRES_JDBC_URL = os.getenv(
+    "POSTGRES_JDBC_URL",
+    f"jdbc:postgresql://{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
 
-# Chia tập theo thời gian trong từng user
-SPLIT_TRAIN = 0.70
-SPLIT_VAL = 0.85
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+
+# ---------- Siêu tham số Huấn luyện ALS ----------
+# Chia tập dữ liệu 80% Train, 10% Val, 10% Test theo thời gian
+SPLIT_TRAIN = 0.80
+SPLIT_VAL = 0.90
 MIN_RATINGS_PER_USER = 5
-
-# Đánh giá
-RELEVANCE_THRESHOLD = 4.0
-TOP_K = 10
+MIN_RATINGS_FOR_RECOMMENDATION = 20
 N_RECOMMENDATIONS = 20
 
-MIN_RATINGS_FOR_RECOMMENDATION = 20
-
-# Lưới siêu tham số
-ALS_RANKS = [10, 50, 100]
-ALS_REG_PARAMS = [0.01, 0.1, 0.2, 0.3, 0.5]
+# Lưới tìm kiếm siêu tham số
+ALS_RANKS = [10]
+ALS_REG_PARAMS = [0.05, 0.1]
 ALS_MAX_ITER = 10
 ALS_CHECKPOINT_INTERVAL = 5
 

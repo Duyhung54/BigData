@@ -1,0 +1,117 @@
+/* Netflix Dark Mode Theme & Custom Animations */
+:root {
+  --netflix-red: #E50914;
+  --netflix-red-hover: #b80710;
+  --netflix-black: #141414;
+  --netflix-dark: #181818;
+  --netflix-card: #202020;
+  --netflix-gray: #808080;
+  --netflix-light: #e5e5e5;
+  --netflix-green: #46D369;
+  --netflix-gold: #FFD700;
+}
+
+body {
+  background-color: var(--netflix-black);
+  color: var(--netflix-light);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #141414;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--netflix-red);
+}
+
+/* Card Hover Animation */
+.movie-card {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1), box-shadow 0.25s ease;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--netflix-card);
+}
+.movie-card:hover {
+  transform: scale(1.05);
+  z-index: 20;
+  box-shadow: 0 10px 25px -5px rgba(229, 9, 20, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
+}
+
+/* Skeleton Loading Shimmer */
+.skeleton {
+  background: linear-gradient(90deg, #222 25%, #333 50%, #222 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Toast Notification */
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.toast {
+  min-width: 280px;
+  max-width: 420px;
+  padding: 14px 20px;
+  border-radius: 8px;
+  background-color: #222;
+  color: #fff;
+  border-left: 5px solid var(--netflix-red);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  animation: slideIn 0.3s ease-out forwards;
+}
+.toast.success {
+  border-left-color: var(--netflix-green);
+}
+.toast.warning {
+  border-left-color: var(--netflix-gold);
+}
+.toast.error {
+  border-left-color: var(--netflix-red);
+}
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-10px); }
+}
+
+/* Pulse animation for live indicators */
+.pulse-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--netflix-red);
+  box-shadow: 0 0 0 0 rgba(229, 9, 20, 0.7);
+  animation: pulse 1.8s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+@keyframes pulse {
+  to {
+    box-shadow: 0 0 0 10px rgba(229, 9, 20, 0);
+  }
+}

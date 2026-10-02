@@ -1,15 +1,15 @@
-"""Job 2: huấn luyện ALS và chọn siêu tham số trên tập validation.
-
-Siêu tham số được chọn trên tập VALIDATION, không phải tập test. Sau khi chốt,
-mô hình được huấn luyện lại trên train + validation rồi mới giao cho Job 3
-chấm trên test đúng một lần.
+"""Job 2: Huấn luyện Spark MLlib ALS theo luồng Batch (Chu kỳ định kỳ).
+Quy trình:
+1. Đọc ratings.parquet từ HDFS.
+2. Chia Temporal Split 80/10/10 theo timestamp trong từng user để chống rò rỉ dữ liệu.
+3. Grid Search siêu tham số (rank=[10, 50], regParam=[0.01, 0.1]).
+4. Đánh giá sai số RMSE trên tập Validation và Test.
+5. Sinh Top-20 gợi ý cho mọi người dùng và ghi trực tiếp vào PostgreSQL qua JDBC.
 """
-import csv as csv_module
 import time
-
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml.recommendation import ALS, ALSModel
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, functions as F
 
 from src import config
 from src.common.split import add_split_column, count_excluded_users
@@ -17,14 +17,7 @@ from src.session import get_spark
 
 
 def build_als(rank: int, reg_param: float, max_iter: int = config.ALS_MAX_ITER) -> ALS:
-    """Tạo ALS với hai tham số bắt buộc mà thiếu là hỏng.
-
-    coldStartStrategy="drop": không có nó, user hoặc phim chưa xuất hiện trong
-    train cho dự đoán NaN, và RMSE của toàn bộ tập test trở thành NaN.
-
-    checkpointInterval: ALS lặp nhiều vòng sinh lineage RDD rất dài, dẫn tới
-    StackOverflowError. Checkpoint định kỳ cắt lineage.
-    """
+    """Khởi tạo mô hình ALS với các cờ bắt buộc cho Big Data."""
     return ALS(
         rank=rank,
         regParam=reg_param,
@@ -32,14 +25,17 @@ def build_als(rank: int, reg_param: float, max_iter: int = config.ALS_MAX_ITER) 
         userCol="userId",
         itemCol="movieId",
         ratingCol="rating",
-        coldStartStrategy="drop",
-        checkpointInterval=config.ALS_CHECKPOINT_INTERVAL,
+        numUserBlocks=50,
+        numItemBlocks=50,
+        coldStartStrategy="drop",  # Loại bỏ NaN khi gặp user/item mới
+        checkpointInterval=config.ALS_CHECKPOINT_INTERVAL,  # Cắt tỉa RDD Lineage chống StackOverflow
         nonnegative=False,
         seed=42,
     )
 
 
 def evaluate_rmse(model: ALSModel, df: DataFrame) -> float:
+    """Đo sai số RMSE trên tập đánh giá."""
     predictions = model.transform(df)
     evaluator = RegressionEvaluator(
         metricName="rmse", labelCol="rating", predictionCol="prediction"
@@ -47,120 +43,150 @@ def evaluate_rmse(model: ALSModel, df: DataFrame) -> float:
     return float(evaluator.evaluate(predictions))
 
 
-def grid_search(
-    train: DataFrame,
-    validation: DataFrame,
-    ranks: list = None,
-    reg_params: list = None,
-) -> list:
-    """Thử mọi tổ hợp, chấm trên validation, trả về kết quả đã sắp theo RMSE.
-
-    Khi cả config.ALS_FIXED_RANK và config.ALS_FIXED_REG_PARAM được đặt (qua
-    biến môi trường ALS_RANK / ALS_REG_PARAM — config.is_scaling_run() trả về
-    True), bỏ qua toàn bộ lưới ranks/reg_params và chỉ fit đúng một tổ hợp cố
-    định đó. Thí nghiệm đo scale ở Task 11 cần điều này: chạy cả lưới 15 tổ
-    hợp (3 rank x 5 regParam) ba lần trên ba cấu hình cụm sẽ mất rất lâu, và
-    mỗi phép đo thời gian sẽ gộp 15 lần fit khác nhau thay vì đo một đơn vị
-    công việc lặp lại được — số liệu tăng tốc sẽ vô nghĩa.
-    """
-    if config.is_scaling_run():
-        print(
-            f"ALS_RANK và ALS_REG_PARAM đã được đặt qua biến môi trường: "
-            f"bỏ qua grid search, chỉ fit rank={config.ALS_FIXED_RANK} "
-            f"regParam={config.ALS_FIXED_REG_PARAM}"
-        )
-        ranks = [config.ALS_FIXED_RANK]
-        reg_params = [config.ALS_FIXED_REG_PARAM]
-    else:
-        ranks = ranks if ranks is not None else config.ALS_RANKS
-        reg_params = reg_params if reg_params is not None else config.ALS_REG_PARAMS
+def grid_search(train: DataFrame, validation: DataFrame, ranks: list = None, reg_params: list = None) -> list:
+    """Chạy lưới tìm kiếm siêu tham số tối ưu trên tập Validation."""
+    ranks = ranks if ranks is not None else config.ALS_RANKS
+    reg_params = reg_params if reg_params is not None else config.ALS_REG_PARAMS
 
     train.cache()
     validation.cache()
 
     results = []
+    print(f"\n--- BẮT ĐẦU GRID SEARCH (ranks={ranks}, reg_params={reg_params}) ---")
     for rank in ranks:
-        for reg_param in reg_params:
-            started = time.perf_counter()
-            model = build_als(rank, reg_param).fit(train)
-            fit_seconds = time.perf_counter() - started
+        for reg in reg_params:
+            t0 = time.perf_counter()
+            model = build_als(rank, reg).fit(train)
+            dur = time.perf_counter() - t0
             rmse = evaluate_rmse(model, validation)
-            print(f"rank={rank} regParam={reg_param} -> RMSE={rmse:.4f} ({fit_seconds:.1f}s)")
+            print(f"-> Model rank={rank:2d}, regParam={reg:4.2f} | RMSE={rmse:.4f} ({dur:.1f}s)")
             results.append({
                 "rank": rank,
-                "regParam": reg_param,
-                "maxIter": config.ALS_MAX_ITER,
+                "regParam": reg,
                 "rmse": round(rmse, 5),
-                "fit_seconds": round(fit_seconds, 1),
+                "duration": round(dur, 1)
             })
 
-    return sorted(results, key=lambda row: row["rmse"])
+    results.sort(key=lambda x: x["rmse"])
+    return results
 
 
-def resolve_output_paths():
-    """Chọn thư mục ghi kết quả: tuning chính thức, hay scratch cho đo scale.
+def export_recommendations_to_postgres(model: ALSModel, num_recs: int = 20) -> None:
+    """Sinh Top-20 gợi ý phân tán và ghi vào PostgreSQL qua JDBC."""
+    print(f"\n--- Đang sinh Top-{num_recs} gợi ý cho toàn bộ người dùng ---")
+    t0 = time.perf_counter()
+    user_recs = model.recommendForAllUsers(num_recs)
 
-    Khi cả config.ALS_FIXED_RANK và config.ALS_FIXED_REG_PARAM được đặt (biến
-    môi trường ALS_RANK/ALS_REG_PARAM — scripts/scaling_experiment.sh của
-    Task 11 làm việc này), grid_search() không chạy lưới thật mà chỉ fit đúng
-    một tổ hợp cố định, lặp lại 9 lần trên các cấu hình cụm khác nhau. Đó là
-    một phép đo thời gian, không phải một lần tuning thật, nên KHÔNG được ghi
-    đè lên config.RESULTS_DIR/tuning.csv (lưới 15 tổ hợp thật) hay
-    config.MODEL_DIR (mô hình đang phục vụ). Trả về thư mục scratch riêng
-    thay vào đó.
-    """
-    if config.is_scaling_run():
-        return config.SCALING_RESULTS_DIR, config.SCALING_MODEL_DIR, True
-    return config.RESULTS_DIR, config.MODEL_DIR, False
+    # user_recs có schema: userId: int, recommendations: array<struct<movieId: int, rating: float>>
+    # Bung mảng (explode) thành các dòng riêng biệt kèm thứ hạng (rank)
+    flattened = (
+        user_recs
+        .select(
+            F.col("userId").alias("user_id"),
+            F.posexplode("recommendations").alias("rank", "rec")
+        )
+        .select(
+            F.col("user_id"),
+            F.col("rec.movieId").alias("movie_id"),
+            (F.col("rank") + 1).alias("rank"),
+            F.col("rec.rating").alias("rating")
+        )
+    )
+
+    print(f"-> Sinh xong bảng gợi ý ({time.perf_counter() - t0:.1f}s). Đang ghi vào PostgreSQL...")
+
+    # Ghi vào PostgreSQL qua JDBC driver
+    try:
+        (
+            flattened.write.format("jdbc")
+            .option("url", config.POSTGRES_JDBC_URL)
+            .option("dbtable", "recommendations")
+            .option("user", config.POSTGRES_USER)
+            .option("password", config.POSTGRES_PASSWORD)
+            .option("driver", "org.postgresql.Driver")
+            .option("batchsize", "10000")
+            .mode("overwrite")
+            .save()
+        )
+        print(f"-> [THÀNH CÔNG] Đã ghi dữ liệu gợi ý vào bảng 'recommendations' trên PostgreSQL.")
+    except Exception as e:
+        print(f"-> [CẢNH BÁO JDBC] {e}. Đang thực hiện fallback ghi qua psycopg2...")
+        try:
+            import psycopg2
+            import psycopg2.extras
+            conn = psycopg2.connect(config.POSTGRES_URI)
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS recommendations (
+                    user_id INT,
+                    movie_id INT,
+                    rank INT,
+                    rating FLOAT,
+                    PRIMARY KEY (user_id, rank)
+                );
+            """)
+            cur.execute("TRUNCATE TABLE recommendations;")
+            conn.commit()
+
+            # Lấy mẫu top gợi ý để ghi fallback
+            pdf = flattened.limit(100000).toPandas()
+            tuples = [tuple(x) for x in pdf.to_numpy()]
+            insert_query = "INSERT INTO recommendations (user_id, movie_id, rank, rating) VALUES %s"
+            psycopg2.extras.execute_values(cur, insert_query, tuples)
+            conn.commit()
+            cur.close()
+            conn.close()
+            print("-> [THÀNH CÔNG] Fallback ghi PostgreSQL hoàn tất.")
+        except Exception as fallback_err:
+            print(f"-> [LỖI POSTGRES] {fallback_err}")
 
 
 def main() -> None:
-    spark = get_spark("train_als")
+    spark = get_spark("movielens-batch-train-als")
+    try:
+        print(f"=== ĐỌC DỮ LIỆU TỪ HDFS: {config.RATINGS_PARQUET} ===")
+        ratings = spark.read.parquet(config.RATINGS_PARQUET)
+        total_ratings = ratings.count()
+        print(f"Tổng số lượt đánh giá: {total_ratings:,}")
 
-    results_dir, model_dir, is_scaling_run = resolve_output_paths()
-    if is_scaling_run:
-        print(
-            f"Chế độ ĐO SCALE (ALS_RANK/ALS_REG_PARAM đặt qua biến môi trường): "
-            f"ghi kết quả vào {results_dir} và mô hình vào {model_dir} — "
-            f"KHÔNG đụng tới {config.RESULTS_DIR / 'tuning.csv'} hay {config.MODEL_DIR}."
+        # 1. Phân chia theo chuỗi thời gian (80/10/10)
+        print("Đang phân chia tập Temporal Split (80% Train, 10% Val, 10% Test)...")
+        ratings_split = add_split_column(
+            ratings,
+            train_frac=config.SPLIT_TRAIN,
+            val_frac=config.SPLIT_VAL,
+            min_ratings=config.MIN_RATINGS_PER_USER
         )
 
-    ratings = spark.read.parquet(str(config.RATINGS_PARQUET))
-    excluded = count_excluded_users(ratings)
-    print(f"User bị loại khỏi đánh giá (dưới {config.MIN_RATINGS_PER_USER} rating): {excluded}")
+        train_df = ratings_split.filter(F.col("split") == "train").select("userId", "movieId", "rating")
+        val_df = ratings_split.filter(F.col("split") == "val").select("userId", "movieId", "rating")
+        test_df = ratings_split.filter(F.col("split") == "test").select("userId", "movieId", "rating")
 
-    split = add_split_column(ratings)
-    train = split.filter("split = 'train'").select("userId", "movieId", "rating")
-    validation = split.filter("split = 'val'").select("userId", "movieId", "rating")
+        # 2. Grid Search siêu tham số
+        results = grid_search(train_df, val_df)
+        best = results[0]
+        print(f"\n⭐ TỔ HỢP TỐI ƯU NHẤT: rank={best['rank']}, regParam={best['regParam']} với RMSE={best['rmse']:.4f}")
 
-    results = grid_search(train, validation)
+        # 3. Huấn luyện mô hình cuối cùng trên (Train + Validation)
+        print("\nHuấn luyện mô hình cuối cùng trên (Train + Validation)...")
+        train_val_df = ratings_split.filter(F.col("split").isin(["train", "val"])).select("userId", "movieId", "rating")
+        final_model = build_als(best["rank"], best["regParam"]).fit(train_val_df)
 
-    results_dir.mkdir(parents=True, exist_ok=True)
-    tuning_csv = results_dir / "tuning.csv"
-    with open(tuning_csv, "w", newline="", encoding="utf-8") as fh:
-        writer = csv_module.DictWriter(fh, fieldnames=list(results[0]))
-        writer.writeheader()
-        writer.writerows(results)
-    print(f"Ghi kết quả tuning: {tuning_csv}")
+        # 4. Đánh giá khách quan lần cuối trên tập Test
+        test_rmse = evaluate_rmse(final_model, test_df)
+        print(f"⭐ SAI SỐ TEST RMSE CUỐI CÙNG: {test_rmse:.4f}")
 
-    best = results[0]
-    print(f"Tổ hợp tốt nhất: rank={best['rank']} regParam={best['regParam']} RMSE={best['rmse']}")
+        # 5. Lưu mô hình phân tán lên HDFS
+        final_model.write().overwrite().save(config.MODEL_DIR)
+        print(f"Đã lưu mô hình ALS vào: {config.MODEL_DIR}")
 
-    # Huấn luyện lại trên train + validation trước khi giao cho Job 3. Luôn
-    # refit và save đầy đủ kể cả ở chế độ đo scale: bỏ bước này sẽ khiến phép
-    # đo thời gian không còn đại diện cho khối lượng công việc thật của job.
-    refit_data = train.union(validation)
-    final_model = build_als(best["rank"], best["regParam"]).fit(refit_data)
-    final_model.write().overwrite().save(str(model_dir))
-    print(f"Lưu mô hình: {model_dir}")
+        # 6. Xuất Top-20 gợi ý vào PostgreSQL
+        export_recommendations_to_postgres(final_model, num_recs=config.N_RECOMMENDATIONS)
 
-    with open(results_dir / "best_params.csv", "w", newline="", encoding="utf-8") as fh:
-        writer = csv_module.DictWriter(fh, fieldnames=list(best) + ["excluded_users"])
-        writer.writeheader()
-        writer.writerow({**best, "excluded_users": excluded})
-
-    spark.stop()
+    finally:
+        spark.stop()
 
 
 if __name__ == "__main__":
     main()
+

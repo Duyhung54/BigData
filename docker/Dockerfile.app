@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir -r /tmp/requirements-app.txt
 ENV PYTHONPATH=/opt/app
 WORKDIR /opt/app
 
-CMD ["uvicorn", "serving.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "serving.web:app", "--host", "0.0.0.0", "--port", "8000"]

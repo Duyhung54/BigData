@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Báo Cáo Toàn Diện Thiết Kế Kiến Trúc & Định Hướng Bổ Sung | MovieLens ALS RecSys</title>
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --primary-light: #3b82f6;
+      --secondary: #0d9488;
+      --accent: #f59e0b;
+      --danger: #ef4444;
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-card: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #475569;
+      --code-bg: #0b1120;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 30px 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      padding: 40px 20px;
+      background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      margin-bottom: 30px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    header h1 {
+      font-size: 2.1rem;
+      color: #60a5fa;
+      margin-bottom: 12px;
+      letter-spacing: -0.5px;
+    }
+
+    header .subtitle {
+      font-size: 1.1rem;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+    }
+
+    header .badge-bar {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 15px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-blue { background: #1e40af; color: #93c5fd; border: 1px solid #3b82f6; }
+    .badge-teal { background: #115e59; color: #5eead4; border: 1px solid #14b8a6; }
+    .badge-amber { background: #78350f; color: #fde68a; border: 1px solid #f59e0b; }
+
+    .nav-bar {
+      position: sticky;
+      top: 10px;
+      z-index: 100;
+      display: flex;
+      gap: 8px;
+      background: rgba(30, 41, 59, 0.95);
+      backdrop-filter: blur(8px);
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 30px;
+      overflow-x: auto;
+    }
+
+    .nav-bar a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: 8px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .nav-bar a:hover, .nav-bar a.active {
+      background: var(--primary-light);
+      color: #fff;
+    }
+
+    section {
+      background: var(--surface);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 32px;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+
+    h2 {
+      font-size: 1.55rem;
+      color: #38bdf8;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 10px;
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      color: #94a3b8;
+      margin: 20px 0 12px 0;
+    }
+
+    p, li {
+      color: #cbd5e1;
+      font-size: 1rem;
+      margin-bottom: 12px;
+    }
+
+    ul, ol {
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin: 20px 0;
+    }
+
+    .card {
+      background: var(--surface-card);
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .diagram-container {
+      background: var(--code-bg);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 24px;
+      margin: 24px 0;
+      overflow-x: auto;
+      text-align: center;
+    }
+
+    .diagram-container svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      background: var(--surface-card);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.92rem;
+    }
+
+    th {
+      background: #0f172a;
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+
+    .callout {
+      background: rgba(59, 130, 246, 0.1);
+      border-left: 4px solid var(--primary-light);
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 20px 0;
+    }
+
+    .callout-success {
+      background: rgba(13, 148, 136, 0.1);
+      border-left-color: var(--secondary);
+    }
+
+    .callout-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border-left-color: var(--accent);
+    }
+
+    .callout-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    .tag-status-active {
+      background: #115e59;
+      color: #5eead4;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: bold;
+    }
+
+    .tag-status-planned {
+      background: #78350f;
+      color: #fde68a;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: bold;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #f43f5e;
+      font-size: 0.9em;
+    }
+
+    pre {
+      background: #090d16;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88rem;
+      color: #e2e8f0;
+      margin: 12px 0;
+      line-height: 1.5;
+    }
+
+    .stat-badge-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin: 20px 0;
+    }
+
+    .stat-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 10px;
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+
+    .stat-label {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    footer {
+      text-align: center;
+      padding: 30px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--border);
+      margin-top: 40px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <h1>BÁO CÁO THIẾT KẾ KIẾN TRÚC & ĐỊNH HƯỚNG BỔ SUNG</h1>
+    <div class="subtitle">Đề tài: Hệ thống Gợi Ý Phim Phân Tán trên nền tảng Apache Spark & HDFS</div>
+    <div class="subtitle" style="font-size: 0.95rem; color: #94a3b8;">Hiện Trạng Nghiên Cứu Thực Nghiệm & Định Hướng Mở Rộng Kiến Trúc Lambda (Batch & Streaming)</div>
+    <div class="badge-bar">
+      <span class="badge badge-blue">Đã Nghiên Cứu Thực Nghiệm</span>
+      <span class="badge badge-teal">HDFS / Spark ALS / Parquet</span>
+      <span class="badge badge-amber">Định Hướng Mong Muốn Bổ Sung</span>
+    </div>
+  </header>
+
+  <nav class="nav-bar">
+    <a href="#concept">1. Kiến Trúc Khái Niệm</a>
+    <a href="#status">2. Hiện Trạng & Mong Muốn</a>
+    <a href="#dataset">3. Danh Mục Dữ Liệu</a>
+    <a href="#stream-idea">4. Stream qua Timestamp</a>
+    <a href="#infrastructure">5. Hạ Tầng Phân Tán</a>
+    <a href="#processing">6. Tầng Xử Lý & ALS</a>
+    <a href="#lambda">7. Kiến Trúc Lambda</a>
+    <a href="#example">8. Ví Dụ Minh Họa An & Bình</a>
+    <a href="#specs">9. Bảng Đặc Tả Kỹ Thuật</a>
+  </nav>
+
+  <!-- 1. KIẾN TRÚC KHÁI NIỆM MỨC CAO -->
+  <section id="concept">
+    <h2>1. Kiến Trúc Khái Niệm Mức Cao (Conceptual Architecture - 5 Tiers)</h2>
+    <p>
+      Kiến trúc khái niệm mô tả toàn bộ hệ thống gợi ý phim Big Data phân tầng theo chuẩn doanh nghiệp gồm <strong>5 tầng chức năng độc lập</strong>:
+    </p>
+
+    <div class="diagram-container">
+      <h3 style="color: #60a5fa; margin-top: 0;">SƠ ĐỒ KIẾN TRÚC KHÁI NIỆM (HIGH-LEVEL CONCEPTUAL ARCHITECTURE)</h3>
+      <svg viewBox="0 0 1000 520" width="100%" height="490" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="cGrad1" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#1e3a8a"/><stop offset="100%" stop-color="#1e40af"/></linearGradient>
+          <linearGradient id="cGrad2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0f766e"/><stop offset="100%" stop-color="#115e59"/></linearGradient>
+          <linearGradient id="cGrad3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#4c1d95"/><stop offset="100%" stop-color="#581c87"/></linearGradient>
+          <linearGradient id="cGrad4" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#854d0e"/><stop offset="100%" stop-color="#713f12"/></linearGradient>
+          <linearGradient id="cGrad5" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#065f46"/><stop offset="100%" stop-color="#047857"/></linearGradient>
+          <marker id="cArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+          </marker>
+        </defs>
+
+        <!-- Tier 5: Presentation & Users -->
+        <rect x="40" y="20" width="920" height="70" rx="10" fill="url(#cGrad5)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="70" y="58" fill="#a7f3d0" font-size="14" font-weight="bold">5. TẦNG ỨNG DỤNG & CLIENT</text>
+        <rect x="330" y="30" width="180" height="50" rx="6" fill="#1e293b" stroke="#34d399" stroke-width="1"/>
+        <text x="420" y="55" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">Web UI Client (Vanilla JS)</text>
+        <text x="420" y="70" fill="#94a3b8" font-size="9" text-anchor="middle">Lịch sử xem & Gợi ý Top-10</text>
+
+        <rect x="530" y="30" width="180" height="50" rx="6" fill="#1e293b" stroke="#34d399" stroke-width="1"/>
+        <text x="620" y="55" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">User Personas (An & Bình)</text>
+        <text x="620" y="70" fill="#94a3b8" font-size="9" text-anchor="middle">Đối chiếu gu phim trực quan</text>
+
+        <rect x="730" y="30" width="210" height="50" rx="6" fill="#1e293b" stroke="#34d399" stroke-width="1"/>
+        <text x="835" y="55" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">Movie Explorer Dashboard</text>
+        <text x="835" y="70" fill="#94a3b8" font-size="9" text-anchor="middle">Tìm kiếm & Phim tương đồng</text>
+
+        <line x1="500" y1="90" x2="500" y2="115" stroke="#38bdf8" stroke-width="2" marker-end="url(#cArrow)"/>
+
+        <!-- Tier 4: Serving & Gateway -->
+        <rect x="40" y="115" width="920" height="75" rx="10" fill="url(#cGrad4)" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="70" y="155" fill="#fde68a" font-size="14" font-weight="bold">4. TẦNG DỊCH VỤ & GATEWAY</text>
+
+        <rect x="330" y="125" width="180" height="55" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1"/>
+        <text x="420" y="150" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">FastAPI Gateway</text>
+        <text x="420" y="167" fill="#94a3b8" font-size="9" text-anchor="middle">RESTful Endpoints, Không Spark</text>
+
+        <rect x="530" y="125" width="180" height="55" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1"/>
+        <text x="620" y="150" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">Real-time Re-ranking</text>
+        <text x="620" y="167" fill="#94a3b8" font-size="9" text-anchor="middle">Hợp nhất Batch + Session Redis</text>
+
+        <rect x="730" y="125" width="210" height="55" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1"/>
+        <text x="835" y="150" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">Vector Cosine Similarity</text>
+        <text x="835" y="167" fill="#94a3b8" font-size="9" text-anchor="middle">In-Memory NumPy (< 16ms)</text>
+
+        <line x1="500" y1="190" x2="500" y2="215" stroke="#38bdf8" stroke-width="2" marker-end="url(#cArrow)"/>
+
+        <!-- Tier 3: Compute & AI/ML -->
+        <rect x="40" y="215" width="920" height="95" rx="10" fill="url(#cGrad3)" stroke="#c084fc" stroke-width="1.5"/>
+        <text x="70" y="260" fill="#e9d5ff" font-size="14" font-weight="bold">3. TẦNG XỬ LÝ & AI / ML</text>
+
+        <rect x="330" y="225" width="280" height="75" rx="6" fill="#1e293b" stroke="#c084fc" stroke-width="1"/>
+        <text x="470" y="250" fill="#e9d5ff" font-size="12" font-weight="bold" text-anchor="middle">Nhánh BATCH (Apache Spark Batch)</text>
+        <text x="470" y="270" fill="#f8fafc" font-size="10" text-anchor="middle">Spark MLlib ALS ($rank=10, reg=0.1$)</text>
+        <text x="470" y="287" fill="#94a3b8" font-size="9" text-anchor="middle">Catalyst Optimizer, Tungsten Off-Heap</text>
+
+        <rect x="630" y="225" width="310" height="75" rx="6" fill="#1e293b" stroke="#f43f5e" stroke-width="1"/>
+        <text x="785" y="250" fill="#fbcfe8" font-size="12" font-weight="bold" text-anchor="middle">Nhánh STREAM (Spark Structured Streaming)</text>
+        <text x="785" y="270" fill="#f8fafc" font-size="10" text-anchor="middle">Event Time qua Timestamp & Watermarking</text>
+        <text x="785" y="287" fill="#94a3b8" font-size="9" text-anchor="middle">Cập nhật Session Vector ngắn hạn trong phiên</text>
+
+        <line x1="500" y1="310" x2="500" y2="335" stroke="#38bdf8" stroke-width="2" marker-end="url(#cArrow)"/>
+
+        <!-- Tier 2: Storage & Lakehouse -->
+        <rect x="40" y="335" width="920" height="80" rx="10" fill="url(#cGrad2)" stroke="#14b8a6" stroke-width="1.5"/>
+        <text x="70" y="375" fill="#5eead4" font-size="14" font-weight="bold">2. TẦNG LƯU TRỮ PHÂN TÁN</text>
+
+        <rect x="330" y="345" width="180" height="60" rx="6" fill="#1e293b" stroke="#14b8a6" stroke-width="1"/>
+        <text x="420" y="370" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">HDFS Data Lake</text>
+        <text x="420" y="388" fill="#94a3b8" font-size="9" text-anchor="middle">Parquet Snappy (128 MB blocks)</text>
+
+        <rect x="530" y="345" width="180" height="60" rx="6" fill="#1e293b" stroke="#14b8a6" stroke-width="1"/>
+        <text x="620" y="370" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">Serving Storage</text>
+        <text x="620" y="388" fill="#94a3b8" font-size="9" text-anchor="middle">recs.sqlite (B-Tree index)</text>
+
+        <rect x="730" y="345" width="210" height="60" rx="6" fill="#1e293b" stroke="#f43f5e" stroke-width="1"/>
+        <text x="835" y="370" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">Redis In-Memory State</text>
+        <text x="835" y="388" fill="#94a3b8" font-size="9" text-anchor="middle">Session Key-Value (TTL=30m)</text>
+
+        <line x1="500" y1="415" x2="500" y2="440" stroke="#38bdf8" stroke-width="2" marker-end="url(#cArrow)"/>
+
+        <!-- Tier 1: Data Sources -->
+        <rect x="40" y="440" width="920" height="65" rx="10" fill="url(#cGrad1)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="70" y="475" fill="#93c5fd" font-size="14" font-weight="bold">1. TẦNG NGUỒN DỮ LIỆU</text>
+
+        <rect x="330" y="448" width="180" height="48" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1"/>
+        <text x="420" y="470" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">ratings.csv (25M dòng)</text>
+        <text x="420" y="485" fill="#94a3b8" font-size="9" text-anchor="middle">userId, movieId, rating, time</text>
+
+        <rect x="530" y="448" width="180" height="48" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1"/>
+        <text x="620" y="470" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">movies.csv (62.423 phim)</text>
+        <text x="620" y="485" fill="#94a3b8" font-size="9" text-anchor="middle">movieId, title, genres</text>
+
+        <rect x="730" y="448" width="210" height="48" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1"/>
+        <text x="835" y="470" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">Genome Tags & Scores</text>
+        <text x="835" y="485" fill="#94a3b8" font-size="9" text-anchor="middle">1.128 đặc trưng điện ảnh ngữ nghĩa</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- 2. HIỆN TRẠNG & MONG MUỐN BỔ SUNG -->
+  <section id="status">
+    <h2>2. Hiện Trạng Nghiên Cứu và Định Hướng Bổ Sung</h2>
+    <p>
+      Hệ thống giải quyết bài toán gợi ý phim quy mô lớn trên bộ dữ liệu <strong>MovieLens 25M</strong> với phân định rõ giữa các kết quả đã thử nghiệm thành công và các tính năng mong muốn mở rộng:
+    </p>
+
+    <div class="card-grid">
+      <div class="card" style="border-top: 4px solid var(--secondary);">
+        <div class="card-title" style="color: #5eead4;">Phân hệ đã nghiên cứu & thử nghiệm thành công</div>
+        <ul>
+          <li>Xây dựng hoàn chỉnh Pipeline Batch 4 job: Ingest ➔ Split ➔ Train ALS ➔ Export.</li>
+          <li>Tối ưu hóa Data Lake: Chuyển đổi CSV sang Parquet Snappy, gộp khối chuẩn 128 MB.</li>
+          <li>Huấn luyện và Grid Search tuning siêu tham số Spark MLlib ALS (15 tổ hợp).</li>
+          <li>Đánh giá đối chiếu với 3 Baselines, chứng minh nghịch lý RMSE vs. Top-N Ranking.</li>
+          <li>Triển khai tầng phục vụ trực tuyến độc lập qua FastAPI + SQLite + NumPy.</li>
+          <li>Đo lường thực nghiệm hiệu năng mở rộng cụm Spark (1, 2, 4 Worker).</li>
+        </ul>
+      </div>
+
+      <div class="card" style="border-top: 4px solid var(--accent);">
+        <div class="card-title" style="color: #fde68a;">Các phân hệ định hướng và mong muốn bổ sung</div>
+        <ul>
+          <li>Mở rộng tầng lưu trữ phân tán lên cụm HDFS đa node (NameNode + DataNodes, Replication=3).</li>
+          <li>Tích hợp Kiến trúc Lambda: Bổ sung Speed Layer với Apache Kafka và Spark Streaming.</li>
+          <li>Ứng dụng trường <code>timestamp</code> làm Event Replay Stream mô phỏng luồng dữ liệu thời gian thực.</li>
+          <li>Cập nhật Session Vector ngắn hạn trong phiên truy cập và lưu trữ trạng thái tại Redis.</li>
+          <li>Khai thác tệp Genome Tags & Scores để xây dựng mô hình Content-Based giải quyết Cold-Start.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. DANH MỤC DỮ LIỆU -->
+  <section id="dataset">
+    <h2>3. Danh Mục Dữ Liệu và Cấu Trúc Chi Tiết Từng Tệp</h2>
+    
+    <p>
+      Bộ dữ liệu nghiên cứu là <strong>MovieLens 25M</strong> (<code>ml-25m</code>), phát hành bởi nhóm nghiên cứu <strong>GroupLens Research</strong> thuộc Đại học Minnesota (Hoa Kỳ). Dữ liệu được ghi nhận trong chu kỳ gần 25 năm (từ ngày 09/01/1995 đến ngày 21/11/2019):
+    </p>
+
+    <!-- Stat Badges -->
+    <div class="stat-badge-grid">
+      <div class="stat-card">
+        <div class="stat-number">25.000.095</div>
+        <div class="stat-label">Tổng lượt đánh giá (Ratings)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">162.541</div>
+        <div class="stat-label">Người dùng (Đã ẩn danh ID)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">62.423</div>
+        <div class="stat-label">Bộ phim trong Catalog</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: #f43f5e;">99.74%</div>
+        <div class="stat-label">Độ thưa ma trận (Sparsity)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">1.128</div>
+        <div class="stat-label">Thẻ ngữ nghĩa (Tag Genome)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: #10b981;">1995 - 2019</div>
+        <div class="stat-label">Khoảng thời gian thu thập</div>
+      </div>
+    </div>
+
+    <div class="callout callout-info" style="background: rgba(56, 189, 248, 0.08); border-left: 4px solid #38bdf8; padding: 12px 16px; margin: 15px 0;">
+      <strong>Độ thưa ma trận tương tác (Matrix Sparsity):</strong><br>
+      <code>Sparsity = 1 - (|R| / (|U| × |I|)) = 1 - (25.000.095 / (162.541 × 59.047)) ≈ 99.74%</code><br>
+      Chỉ có <strong>0.26%</strong> các ô trong không gian tương tác Người dùng - Phim mang giá trị quan sát thực tế, đặt ra bài toán tối ưu hóa phân rã ma trận thưa quy mô lớn trên Apache Spark.
+    </div>
+
+    <h3>3.1 Bảng tổng hợp quy mô vật lý và trạng thái nghiên cứu</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Tên tệp</th>
+          <th>Dung lượng CSV</th>
+          <th>Số bản ghi</th>
+          <th>Dung lượng Parquet Snappy</th>
+          <th>Vai trò trong kiến trúc</th>
+          <th>Trạng thái nghiên cứu</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong><code>ratings.csv</code></strong></td>
+          <td>678.26 MB</td>
+          <td>25.000.095</td>
+          <td>~268 MB (Nén 2.5×, 2 blocks)</td>
+          <td>Dữ liệu tương tác cốt lõi cho ALS & Event Replay Stream</td>
+          <td><span class="tag-status-active">ĐÃ NGHIÊN CỨU & ĐANG DÙNG</span></td>
+        </tr>
+        <tr>
+          <td><strong><code>movies.csv</code></strong></td>
+          <td>3.04 MB</td>
+          <td>62.423</td>
+          <td>~1.1 MB (1 block)</td>
+          <td>Bảng tra cứu danh mục (Dimension Lookup)</td>
+          <td><span class="tag-status-active">ĐÃ NGHIÊN CỨU & ĐANG DÙNG</span></td>
+        </tr>
+        <tr>
+          <td><strong><code>tags.csv</code></strong></td>
+          <td>38.81 MB</td>
+          <td>1.093.360</td>
+          <td>Chưa nén</td>
+          <td>Phân tích từ khóa ngữ cảnh / NLP Sentiment</td>
+          <td><span class="tag-status-planned">ĐỊNH HƯỚNG MONG MUỐN BỔ SUNG</span></td>
+        </tr>
+        <tr>
+          <td><strong><code>genome-scores.csv</code></strong></td>
+          <td>435.16 MB</td>
+          <td>15.584.448</td>
+          <td>Chưa nén</td>
+          <td>Ma trận dày đặc đặc trưng phim cho Content-Based & Cold-Start</td>
+          <td><span class="tag-status-planned">ĐỊNH HƯỚNG MONG MUỐN BỔ SUNG</span></td>
+        </tr>
+        <tr>
+          <td><strong><code>genome-tags.csv</code></strong></td>
+          <td>18.10 KB</td>
+          <td>1.128</td>
+          <td>Chưa nén</td>
+          <td>Từ điển nhãn đặc trưng điện ảnh chuẩn hóa</td>
+          <td><span class="tag-status-planned">ĐỊNH HƯỚNG MONG MUỐN BỔ SUNG</span></td>
+        </tr>
+        <tr>
+          <td><strong><code>links.csv</code></strong></td>
+          <td>1.37 MB</td>
+          <td>62.423</td>
+          <td>Chưa nén</td>
+          <td>Ánh xạ ID ngoài tích hợp REST API TMDb/IMDb Poster</td>
+          <td><span class="tag-status-planned">ĐỊNH HƯỚNG MONG MUỐN BỔ SUNG</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>3.2 Đặc tả dữ liệu đã nghiên cứu và đang phục vụ hệ thống</h3>
+
+    <!-- Card ratings.csv -->
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="card-title" style="color: #38bdf8;">1. Tệp đánh giá tương tác: <code>ratings.csv</code></div>
+      <p>Lưu trữ toàn bộ phản hồi tường minh (Explicit Feedback) của người dùng. Thang đo 5 sao với bước nhảy 0.5 (10 mức điểm). Điểm trung bình toàn tập đạt μ ≈ 3.53 sao (điểm 4.0 sao chiếm tỷ lệ cao nhất 26.8%).</p>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Tên trường</th>
+            <th>Kiểu dữ liệu Spark</th>
+            <th>Kiểu dữ liệu SQL</th>
+            <th>Miền giá trị</th>
+            <th>Mô tả nghiệp vụ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>userId</code></td>
+            <td><code>IntegerType</code></td>
+            <td><code>INT</code></td>
+            <td>1 → 162.541</td>
+            <td>Mã định danh người dùng (đã ẩn danh hóa)</td>
+          </tr>
+          <tr>
+            <td><code>movieId</code></td>
+            <td><code>IntegerType</code></td>
+            <td><code>INT</code></td>
+            <td>1 → 209.171</td>
+            <td>Mã định danh bộ phim được chấm điểm</td>
+          </tr>
+          <tr>
+            <td><code>rating</code></td>
+            <td><code>DoubleType</code></td>
+            <td><code>DOUBLE</code></td>
+            <td>0.5 → 5.0</td>
+            <td>Điểm đánh giá tường minh (bước nhảy 0.5)</td>
+          </tr>
+          <tr>
+            <td><code>timestamp</code></td>
+            <td><code>LongType</code></td>
+            <td><code>BIGINT</code></td>
+            <td>789.652.004 → 1.574.327.703</td>
+            <td>Thời điểm phát sinh sự kiện (Unix epoch seconds)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p><strong>Dữ liệu mẫu thực tế:</strong></p>
+      <pre>userId,movieId,rating,timestamp
+1,296,5.0,1147880044
+1,306,3.5,1147868817
+1,307,5.0,1147868828
+1,665,5.0,1147878820</pre>
+
+      <ul>
+        <li><strong>Ngăn ngừa rò rỉ dữ liệu (Temporal Split):</strong> Áp dụng hàm cửa sổ thời gian trên từng người dùng (70% Train, 15% Validation, 15% Test) thay vì chia ngẫu nhiên.</li>
+        <li><strong>Bộ lọc ứng viên (Candidate Filter):</strong> Áp dụng <code>MIN_RATINGS_FOR_RECOMMENDATION = 20</code> để loại trừ phim có dưới 20 đánh giá, khắc phục hiện tượng ALS gán điểm cực trị cho phim chỉ có 1 lượt đánh giá.</li>
+        <li><strong>Cột mốc thời gian sự kiện:</strong> Cột <code>timestamp</code> được sử dụng làm Event Time cho bộ mô phỏng Speed Streaming Layer.</li>
+      </ul>
+    </div>
+
+    <!-- Card movies.csv -->
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="card-title" style="color: #38bdf8;">2. Tệp danh mục phim: <code>movies.csv</code></div>
+      <p>Bảng tra cứu danh mục (Dimension Lookup) cung cấp thông tin tiêu đề phát hành và 20 nhãn thể loại chuẩn hóa.</p>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Tên trường</th>
+            <th>Kiểu dữ liệu Spark</th>
+            <th>Kiểu dữ liệu SQL</th>
+            <th>Ví dụ giá trị</th>
+            <th>Mô tả nghiệp vụ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>movieId</code></td>
+            <td><code>IntegerType</code></td>
+            <td><code>INT</code></td>
+            <td>1, 296, 1732</td>
+            <td>Khóa chính liên kết với bảng đánh giá và bảng thẻ</td>
+          </tr>
+          <tr>
+            <td><code>title</code></td>
+            <td><code>StringType</code></td>
+            <td><code>VARCHAR(255)</code></td>
+            <td>Toy Story (1995)</td>
+            <td>Tên phim kèm năm phát hành trong ngoặc đơn</td>
+          </tr>
+          <tr>
+            <td><code>genres</code></td>
+            <td><code>StringType</code></td>
+            <td><code>VARCHAR(255)</code></td>
+            <td>Action|Adventure|Sci-Fi</td>
+            <td>Danh sách thể loại nối bởi dấu gạch đứng |</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p><strong>Dữ liệu mẫu thực tế:</strong></p>
+      <pre>movieId,title,genres
+1,Toy Story (1995),Adventure|Animation|Children|Comedy|Fantasy
+2,Jumanji (1995),Adventure|Children|Fantasy
+3,Grumpier Old Men (1995),Comedy|Romance</pre>
+
+      <p><strong>20 thể loại chuẩn hóa:</strong> <em>Action, Adventure, Animation, Children, Comedy, Crime, Documentary, Drama, Fantasy, Film-Noir, Horror, Musical, Mystery, Romance, Sci-Fi, Thriller, War, Western, IMAX, (no genres listed)</em>.</p>
+      <p><strong>Vai trò kỹ thuật:</strong> Thực hiện Broadcast Hash Join với ma trận dự đoán Top-N của ALS để xuất ra tệp <code>recs.sqlite</code> có đầy đủ tiêu đề và thể loại, phục vụ API trả kết quả tức thì.</p>
+    </div>
+
+    <h3>3.3 Đặc tả dữ liệu định hướng cho các phân hệ mong muốn bổ sung</h3>
+
+    <div class="card-grid">
+      <!-- tags.csv -->
+      <div class="card" style="border-top: 4px solid var(--accent);">
+        <div class="card-title" style="color: #fde68a;">Tệp gắn nhãn tự do: <code>tags.csv</code></div>
+        <p><strong>Quy mô:</strong> 1.093.360 dòng (38.81 MB). Chứa các từ khóa do người dùng tự nhập mô tả cảm xúc, chủ đề và phong cách phim.</p>
+        <pre>userId,movieId,tag,timestamp
+3,260,classic,1439472355
+4,1732,dark comedy,1573943598
+4,1732,great dialogue,1573943604</pre>
+        <p><strong>Định hướng khai thác:</strong> Xử lý ngôn ngữ tự nhiên (NLP) phân tích cảm xúc (Sentiment Analysis) và trích xuất từ khóa đặc trưng phục vụ gợi ý theo ngữ cảnh tâm lý người xem.</p>
+      </div>
+
+      <!-- genome -->
+      <div class="card" style="border-top: 4px solid var(--accent);">
+        <div class="card-title" style="color: #fde68a;">Ma trận Thẻ Ngữ nghĩa: <code>genome-*.csv</code></div>
+        <p><strong>Quy mô:</strong> 15.584.448 dòng (435.16 MB). Ma trận dày đặc (Dense Matrix) giữa 13.816 phim và 1.128 thẻ đặc trưng với điểm liên quan <code>relevance</code> ∈ [0.0, 1.0].</p>
+        <pre># genome-scores.csv:
+movieId,tagId,relevance
+1,1,0.02875
+1,19,0.73250 (19=action)
+1,25,0.04500 (25=aliens)</pre>
+        <p><strong>Định hướng khai thác:</strong> Xây dựng mô hình Content-Based Filtering với vector đặc trưng 1.128 chiều, giải quyết triệt để bài toán Khởi đầu lạnh (Item Cold-Start) cho phim mới chưa có đánh giá.</p>
+      </div>
+
+      <!-- links.csv -->
+      <div class="card" style="border-top: 4px solid var(--accent);">
+        <div class="card-title" style="color: #fde68a;">Ánh xạ siêu dữ liệu: <code>links.csv</code></div>
+        <p><strong>Quy mô:</strong> 62.423 dòng (1.37 MB). Ánh xạ khóa ngoại sang hệ thống IMDb và TMDb.</p>
+        <pre>movieId,imdbId,tmdbId
+1,0114709,862
+2,0113497,8844
+3,0113228,15602</pre>
+        <p><strong>Định hướng khai thác:</strong> Kết nối trực tiếp với REST API của The Movie Database (TMDb) để tải Poster hình ảnh độ nét cao, Trailer YouTube và thông tin đạo diễn/diễn viên lên giao diện Web UI.</p>
+      </div>
+    </div>
+
+    <h3>3.4 Tối ưu hóa lưu trữ phân tán và I/O (CSV vs. Parquet Snappy)</h3>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title" style="color: #10b981;">Nén Snappy & Tiết kiệm I/O</div>
+        <p>Dung lượng dữ liệu tương tác giảm từ <strong>678 MB (CSV)</strong> xuống còn <strong>268 MB (Parquet)</strong>, đạt tỷ lệ nén 2.5×. Tốc độ đọc quét toàn bộ 25 triệu dòng tăng từ 3.00s lên 1.43s (nhanh gấp <strong>2.1 lần</strong>).</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color: #10b981;">Trích xuất theo cột (Column Pruning)</div>
+        <p>Định dạng Parquet cho phép Spark chỉ tải đúng 3 cột cần thiết (<code>userId</code>, <code>movieId</code>, <code>rating</code>) và bỏ qua cột <code>timestamp</code> trong pha fit ALS, tiết kiệm 25% lưu lượng nạp bộ nhớ.</p>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color: #10b981;">Quy chuẩn khối HDFS 128 MB</div>
+        <p>Dữ liệu 268 MB được gom chuẩn hóa thành đúng 2 tệp phân đoạn (~134 MB/tệp), khớp trực tiếp với kích thước khối 128 MB của HDFS, loại bỏ hoàn toàn vấn đề tệp nhỏ (Small Files Problem).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Ý TƯỞNG TIMESTAMP EVENT REPLAY STREAM -->
+  <section id="stream-idea">
+    <h2>4. Thiết Kế Ý Tưởng: Dùng Timestamp Làm Data Stream (Event Replay Stream)</h2>
+    <div class="callout callout-warning">
+      <div class="callout-title">Ý TƯỞNG THIẾT KẾ KỸ THUẬT CHO TẦNG STREAMING</div>
+      <p>
+        Trong môi trường nghiên cứu, hệ thống tận dụng trường <strong><code>timestamp</code></strong> (thời điểm người dùng chấm điểm trong <code>ratings.csv</code>) làm <strong>Event Time</strong> để mô phỏng dòng dữ liệu thời gian thực thông qua cơ chế <strong>Historical Event Replay</strong>.
+      </p>
+    </div>
+
+    <div class="diagram-container">
+      <h3 style="color: #38bdf8; margin-top: 0;">SƠ ĐỒ MÔ PHỎNG LUỒNG DỮ LIỆU THỜI GIAN THỰC TỪ TIMESTAMP</h3>
+      <svg viewBox="0 0 950 260" width="100%" height="250" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+          </marker>
+        </defs>
+
+        <rect x="20" y="70" width="170" height="110" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="105" y="105" fill="#93c5fd" font-size="13" font-weight="bold" text-anchor="middle">ratings.csv (15% mới nhất)</text>
+        <text x="105" y="130" fill="#f8fafc" font-size="11" text-anchor="middle">Sắp xếp theo</text>
+        <text x="105" y="150" fill="#f59e0b" font-size="12" font-weight="bold" text-anchor="middle">ORDER BY timestamp</text>
+
+        <line x1="190" y1="125" x2="250" y2="125" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+        <text x="220" y="115" fill="#38bdf8" font-size="10" text-anchor="middle">Đọc tuần tự</text>
+
+        <rect x="250" y="70" width="180" height="110" rx="8" fill="#1e293b" stroke="#0d9488" stroke-width="1.5"/>
+        <text x="340" y="105" fill="#5eead4" font-size="13" font-weight="bold" text-anchor="middle">Event Replay Producer</text>
+        <text x="340" y="130" fill="#cbd5e1" font-size="11" text-anchor="middle">Phát lại sự kiện</text>
+        <text x="340" y="150" fill="#5eead4" font-size="11" text-anchor="middle">Tốc độ tua 1x - 100x</text>
+
+        <line x1="430" y1="125" x2="490" y2="125" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+        <text x="460" y="115" fill="#38bdf8" font-size="10" text-anchor="middle">Produce</text>
+
+        <rect x="490" y="70" width="180" height="110" rx="8" fill="#831843" stroke="#f43f5e" stroke-width="1.5"/>
+        <text x="580" y="105" fill="#fbcfe8" font-size="13" font-weight="bold" text-anchor="middle">Apache Kafka</text>
+        <text x="580" y="130" fill="#cbd5e1" font-size="11" text-anchor="middle">Topic: "user-ratings"</text>
+        <text x="580" y="150" fill="#fbcfe8" font-size="11" text-anchor="middle">Message Queue phân tán</text>
+
+        <line x1="670" y1="125" x2="730" y2="125" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+        <text x="700" y="115" fill="#38bdf8" font-size="10" text-anchor="middle">Consume</text>
+
+        <rect x="730" y="55" width="200" height="140" rx="8" fill="#1e3a8a" stroke="#60a5fa" stroke-width="1.5"/>
+        <text x="830" y="85" fill="#93c5fd" font-size="13" font-weight="bold" text-anchor="middle">Spark Streaming</text>
+        <text x="830" y="110" fill="#fde68a" font-size="10" text-anchor="middle">withWatermark("timestamp")</text>
+        <text x="830" y="135" fill="#cbd5e1" font-size="11" text-anchor="middle">Cập nhật Session Vector</text>
+        <text x="830" y="160" fill="#5eead4" font-size="11" font-weight="bold" text-anchor="middle">Ghi trạng thái vào Redis</text>
+      </svg>
+    </div>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title">1. Phân định dữ liệu Train và Stream</div>
+        <p>Hệ thống cắt 70% đánh giá cũ nhất để huấn luyện ma trận Batch ALS ban đầu. 15% đánh giá mới nhất (tập Test) được dùng làm nguồn cấp sự kiện cho bộ phát lại (Event Replay Producer).</p>
+      </div>
+      <div class="card">
+        <div class="card-title">2. Xử lý Watermarking trên Event Time</div>
+        <p>Spark Structured Streaming sử dụng chính cột <code>timestamp</code> làm Event Time, tích hợp cơ chế <code>withWatermark("timestamp", "2 hours")</code> để xử lý trật tự sự kiện trễ mạng hoặc lệch mốc thời gian.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">3. Re-ranking trực tuyến trong phiên</div>
+        <p>Khi có sự kiện mới, Spark Streaming cập nhật nhanh Session Vector vào Redis. Khi người dùng tải lại trang web, FastAPI kết hợp gợi ý nền tảng từ Batch với Session Vector để xếp hạng lại (Re-ranking) ngay tức thì.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. HẠ TẦNG PHÂN TÁN HDFS & SPARK -->
+  <section id="infrastructure">
+    <h2>5. Thiết Kế Hạ Tầng Phân Tán (HDFS & Spark on YARN)</h2>
+    <p>
+      Hệ thống sử dụng HDFS làm nền tảng lưu trữ phân tán kết hợp cụm Apache Spark on YARN để điều phối tính toán:
+    </p>
+
+    <div class="diagram-container">
+      <h3 style="color: #60a5fa; margin-top: 0;">SƠ ĐỒ HẠ TẦNG PHÂN TÁN DOANH NGHIỆP</h3>
+      <svg viewBox="0 0 1000 450" width="100%" height="420" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="gradHDFS" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1e3a8a"/><stop offset="100%" stop-color="#172554"/></linearGradient>
+          <linearGradient id="gradSpark" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0f766e"/><stop offset="100%" stop-color="#134e4a"/></linearGradient>
+          <linearGradient id="gradServing" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#854d0e"/><stop offset="100%" stop-color="#713f12"/></linearGradient>
+        </defs>
+
+        <!-- Khung HDFS -->
+        <rect x="30" y="30" width="280" height="390" rx="12" fill="url(#gradHDFS)" stroke="#3b82f6" stroke-width="2"/>
+        <text x="170" y="60" fill="#93c5fd" font-size="15" font-weight="bold" text-anchor="middle">TẦNG LƯU TRỮ (HDFS)</text>
+        <rect x="50" y="80" width="240" height="65" rx="8" fill="#1e293b" stroke="#60a5fa" stroke-width="1"/>
+        <text x="170" y="105" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">NameNode (Master)</text>
+        <text x="170" y="125" fill="#94a3b8" font-size="10" text-anchor="middle">Quản lý Metadata & Block Mapping</text>
+        
+        <rect x="50" y="160" width="240" height="65" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+        <text x="170" y="185" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">DataNode 1 (Worker 1)</text>
+        <text x="170" y="205" fill="#94a3b8" font-size="10" text-anchor="middle">Block 1, Block 2 (128 MB Parquet)</text>
+
+        <rect x="50" y="240" width="240" height="65" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+        <text x="170" y="265" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">DataNode 2 (Worker 2)</text>
+        <text x="170" y="285" fill="#94a3b8" font-size="10" text-anchor="middle">Block 1 (Replica), Block 3</text>
+
+        <text x="170" y="340" fill="#60a5fa" font-size="11" text-anchor="middle">Replication Factor = 3</text>
+        <text x="170" y="365" fill="#cbd5e1" font-size="10" text-anchor="middle">hdfs://namenode:9000/movielens/</text>
+
+        <!-- Mũi tên HDFS -> Spark -->
+        <line x1="310" y1="210" x2="370" y2="210" stroke="#38bdf8" stroke-width="3" marker-end="url(#arrow)"/>
+        <text x="340" y="195" fill="#38bdf8" font-size="11" text-anchor="middle">Data Locality</text>
+
+        <!-- Khung Spark on YARN -->
+        <rect x="370" y="30" width="310" height="390" rx="12" fill="url(#gradSpark)" stroke="#14b8a6" stroke-width="2"/>
+        <text x="525" y="60" fill="#5eead4" font-size="15" font-weight="bold" text-anchor="middle">TẦNG TÍNH TOÁN (SPARK ON YARN)</text>
+
+        <rect x="390" y="80" width="270" height="65" rx="8" fill="#1e293b" stroke="#14b8a6" stroke-width="1"/>
+        <text x="525" y="105" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">Spark Driver (ApplicationMaster)</text>
+        <text x="525" y="125" fill="#94a3b8" font-size="10" text-anchor="middle">Catalyst Optimizer & DAG Scheduler</text>
+
+        <rect x="390" y="160" width="270" height="70" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+        <text x="525" y="185" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">Executor 1 (Co-located Node 1)</text>
+        <text x="525" y="205" fill="#94a3b8" font-size="10" text-anchor="middle">Huấn luyện ALS luân phiên (Tungsten)</text>
+        <text x="525" y="220" fill="#5eead4" font-size="9" text-anchor="middle">Local read không tốn I/O mạng</text>
+
+        <rect x="390" y="245" width="270" height="70" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+        <text x="525" y="270" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">Executor 2 (Co-located Node 2)</text>
+        <text x="525" y="290" fill="#94a3b8" font-size="10" text-anchor="middle">Shuffle ma trận qua mạng khi lặp vòng</text>
+
+        <text x="525" y="350" fill="#5eead4" font-size="11" text-anchor="middle">Job Pipeline 4 bước: Ingest ➔ Split ➔ ALS ➔ Export</text>
+
+        <!-- Mũi tên Spark -> Serving -->
+        <line x1="680" y1="210" x2="740" y2="210" stroke="#38bdf8" stroke-width="3" marker-end="url(#arrow)"/>
+        <text x="710" y="195" fill="#38bdf8" font-size="11" text-anchor="middle">Export</text>
+
+        <!-- Khung Serving -->
+        <rect x="740" y="30" width="230" height="390" rx="12" fill="url(#gradServing)" stroke="#f59e0b" stroke-width="2"/>
+        <text x="855" y="60" fill="#fde68a" font-size="15" font-weight="bold" text-anchor="middle">TẦNG SERVING (API)</text>
+
+        <rect x="755" y="90" width="200" height="60" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="1"/>
+        <text x="855" y="115" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">recs.sqlite (Indexed)</text>
+        <text x="855" y="135" fill="#94a3b8" font-size="10" text-anchor="middle">Top-20 phim / User (< 1ms)</text>
+
+        <rect x="755" y="165" width="200" height="60" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="1"/>
+        <text x="855" y="190" fill="#f8fafc" font-size="11" font-weight="bold" text-anchor="middle">item_factors.npy</text>
+        <text x="855" y="210" fill="#94a3b8" font-size="10" text-anchor="middle">In-Memory Vector (~16ms)</text>
+
+        <rect x="755" y="240" width="200" height="80" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1"/>
+        <text x="855" y="265" fill="#38bdf8" font-size="12" font-weight="bold" text-anchor="middle">FastAPI Engine</text>
+        <text x="855" y="285" fill="#94a3b8" font-size="10" text-anchor="middle">Không phụ thuộc Java/Spark</text>
+        <text x="855" y="305" fill="#fde68a" font-size="10" text-anchor="middle">Web Demo: localhost:8000</text>
+
+        <text x="855" y="360" fill="#5eead4" font-size="11" font-weight="bold" text-anchor="middle">Độ trễ thấp: 3.9ms - 16ms</text>
+      </svg>
+    </div>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title">Cấu trúc Master - Worker HDFS</div>
+        <p><code>NameNode</code> quản trị không gian tên <code>hdfs://namenode:9000/movielens/</code> và metadata khối dữ liệu. <code>DataNodes</code> lưu trữ các khối dữ liệu vật lý trên các máy chủ tính toán thành viên.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Phân đoạn khối 128 MB (Block Size)</div>
+        <p>Tệp <code>ratings.parquet</code> (268 MB) được chia thành đúng 2 khối 128 MB và 1 khối phần dư. Không phân vùng theo <code>userId</code> nhằm loại bỏ chi phí quản lý tệp nhỏ (Small Files Problem) trên NameNode.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Chịu lỗi & Data Locality</div>
+        <p>Hệ số nhân bản <code>Replication Factor = 3</code> đảm bảo an toàn dữ liệu. Spark Scheduler điều phối Executor tính toán ngay trên DataNode chứa khối dữ liệu (Local Read), loại trừ nghẽn mạng.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. TẦNG XỬ LÝ & ALS -->
+  <section id="processing">
+    <h2>6. Tầng Xử Lý Dữ Liệu & Mô Hình Học Máy Spark ALS</h2>
+    <p>
+      Hệ thống chuẩn hóa toàn bộ luồng xử lý trên <strong>Spark DataFrame kết hợp Spark SQL</strong>, loại bỏ việc sử dụng RDD cấp thấp cho logic nghiệp vụ:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Hạng mục kỹ thuật</th>
+          <th>RDD (Resilient Distributed Datasets)</th>
+          <th>Spark DataFrame (Chuẩn hóa của hệ thống)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Tối ưu hóa thực thi</strong></td>
+          <td>Không có bộ tối ưu. Thực thi tuần tự theo lệnh viết.</td>
+          <td><strong>Catalyst Optimizer</strong>: Tối ưu kế hoạch logic/vật lý, tự động đẩy bộ lọc xuống Parquet.</td>
+        </tr>
+        <tr>
+          <td><strong>Quản lý bộ nhớ</strong></td>
+          <td>Đối tượng Java trên JVM Heap (nguy cơ gián đoạn do Garbage Collection).</td>
+          <td><strong>Tungsten Engine</strong>: Lưu nhị phân Off-Heap, xử lý trực tiếp trên chuỗi byte.</td>
+        </tr>
+        <tr>
+          <td><strong>Hiệu năng nạp dữ liệu</strong></td>
+          <td>Đọc tuần tự toàn bộ bản ghi văn bản.</td>
+          <td><strong>Schema tĩnh qua StructType</strong>: Nạp dữ liệu trong 3.00s (nhanh hơn 4.8 lần so với inferSchema 14.49s).</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title">Phân tách theo thời gian (Temporal Split)</div>
+        <p>Áp dụng hàm cửa sổ Window chia 70% dữ liệu cũ nhất vào <code>Train</code>, 15% tiếp theo vào <code>Validation</code>, 15% mới nhất vào <code>Test</code> trên từng người dùng, loại trừ rò rỉ dữ liệu tương lai.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Tối ưu hóa siêu tham số (Grid Search)</div>
+        <p>Khảo sát 15 tổ hợp tham số. Tổ hợp $rank=10, regParam=0.1, maxIter=10$ đạt hiệu quả tối ưu với RMSE = 0.81527 và thời gian fit 32.2 giây (nhanh hơn 14 lần so với $rank=100$).</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Bộ lọc ứng viên (Eligibility Filter)</div>
+        <p>Áp dụng ngưỡng <code>MIN_RATINGS_FOR_RECOMMENDATION = 20</code> đưa chỉ số xếp hạng NDCG@10 từ 0.00001 lên 0.00735, triệt tiêu hiện tượng mô hình overfit vào phim 1 đánh giá.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. THIẾT KẾ LAMBDA -->
+  <section id="lambda">
+    <h2>7. Thiết Kế Kiến Trúc Lambda Mở Rộng (Batch & Streaming)</h2>
+    
+    <div class="diagram-container">
+      <h3 style="color: #f59e0b; margin-top: 0;">SƠ ĐỒ KIẾN TRÚC LAMBDA HỢP NHẤT</h3>
+      <svg viewBox="0 0 950 420" width="100%" height="400" xmlns="http://www.w3.org/2000/svg">
+        <!-- Input Event -->
+        <rect x="20" y="160" width="160" height="90" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+        <text x="100" y="195" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">NGUỒN DỮ LIỆU</text>
+        <text x="100" y="215" fill="#94a3b8" font-size="11" text-anchor="middle">- 25M ratings (HDFS)</text>
+        <text x="100" y="235" fill="#38bdf8" font-size="11" text-anchor="middle">- Event Replay (Kafka)</text>
+
+        <!-- Mũi tên chia 2 nhánh -->
+        <path d="M 180 180 L 260 90" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M 180 230 L 260 320" fill="none" stroke="#be185d" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Nhánh Batch Layer -->
+        <rect x="260" y="30" width="300" height="120" rx="10" fill="#1e3a8a" stroke="#60a5fa" stroke-width="1.5"/>
+        <text x="410" y="60" fill="#93c5fd" font-size="14" font-weight="bold" text-anchor="middle">BATCH LAYER (Apache Spark Batch)</text>
+        <text x="410" y="85" fill="#f8fafc" font-size="11" text-anchor="middle">- Huấn luyện ALS định kỳ hàng đêm trên HDFS</text>
+        <text x="410" y="105" fill="#f8fafc" font-size="11" text-anchor="middle">- Tối ưu toàn cục ma trận người dùng - bộ phim</text>
+        <text x="410" y="125" fill="#93c5fd" font-size="11" text-anchor="middle">- Xuất trước Top-100 phim nền tảng cho 162.541 user</text>
+
+        <!-- Nhánh Speed Layer -->
+        <rect x="260" y="260" width="300" height="120" rx="10" fill="#831843" stroke="#f43f5e" stroke-width="1.5"/>
+        <text x="410" y="290" fill="#fbcfe8" font-size="14" font-weight="bold" text-anchor="middle">SPEED LAYER (Kafka + Spark Streaming)</text>
+        <text x="410" y="315" fill="#f8fafc" font-size="11" text-anchor="middle">- Tiếp nhận sự kiện phát lại qua Apache Kafka</text>
+        <text x="410" y="335" fill="#f8fafc" font-size="11" text-anchor="middle">- Cập nhật Session Vector ngắn hạn trong phiên</text>
+        <text x="410" y="355" fill="#fbcfe8" font-size="11" text-anchor="middle">- Xử lý trượt cửa sổ thời gian (Watermarking)</text>
+
+        <!-- Mũi tên vào View -->
+        <line x1="560" y1="90" x2="620" y2="90" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="560" y1="320" x2="620" y2="320" stroke="#f43f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Batch View & Real-time State -->
+        <rect x="620" y="60" width="140" height="60" rx="8" fill="#1e293b" stroke="#60a5fa" stroke-width="1"/>
+        <text x="690" y="85" fill="#93c5fd" font-size="11" font-weight="bold" text-anchor="middle">Batch View</text>
+        <text x="690" y="105" fill="#94a3b8" font-size="10" text-anchor="middle">recs.sqlite / Parquet</text>
+
+        <rect x="620" y="290" width="140" height="60" rx="8" fill="#1e293b" stroke="#f43f5e" stroke-width="1"/>
+        <text x="690" y="315" fill="#fbcfe8" font-size="11" font-weight="bold" text-anchor="middle">Real-time State</text>
+        <text x="690" y="335" fill="#94a3b8" font-size="10" text-anchor="middle">Redis In-Memory</text>
+
+        <!-- Mũi tên vào Serving -->
+        <path d="M 760 90 L 810 170" fill="none" stroke="#60a5fa" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M 760 320 L 810 240" fill="none" stroke="#f43f5e" stroke-width="2" marker-end="url(#arrow)"/>
+
+        <!-- Serving Layer -->
+        <rect x="800" y="150" width="130" height="110" rx="10" fill="#065f46" stroke="#34d399" stroke-width="2"/>
+        <text x="865" y="180" fill="#a7f3d0" font-size="13" font-weight="bold" text-anchor="middle">SERVING</text>
+        <text x="865" y="200" fill="#f8fafc" font-size="11" text-anchor="middle">(FastAPI)</text>
+        <text x="865" y="225" fill="#a7f3d0" font-size="10" text-anchor="middle">Re-ranking</text>
+        <text x="865" y="245" fill="#f8fafc" font-size="10" text-anchor="middle">Độ trễ < 20ms</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- 8. VÍ DỤ MINH HỌA XUYÊN SUỐT -->
+  <section id="example">
+    <h2>8. Ví Dụ Minh Họa End-to-End: Người Dùng "An" và Phim "Avengers" / "The Notebook"</h2>
+    
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title" style="color: #38bdf8;">Giai đoạn 1: Đêm qua (Tầng Batch xử lý lúc 2h sáng)</div>
+        <p><strong>Lịch sử trên HDFS:</strong> An ($u_1$) thường xuyên xem và chấm 5 sao cho phim hành động viễn tưởng.</p>
+        <p><strong>Spark Batch chạy trên cụm:</strong></p>
+        <ul>
+          <li>Học ra vector gu dài hạn của An: $p_{\text{An}} = [0.95, 0.05]$ (95% Hành động, 5% Tình cảm).</li>
+          <li>Điểm dự đoán cho <em>Avengers</em> ($q = [0.90, 0.10]$): đạt <strong>4.8 sao</strong>.</li>
+          <li>Điểm dự đoán cho <em>Titanic</em> ($q = [0.05, 0.95]$): chỉ đạt <strong>1.0 sao</strong>.</li>
+          <li>Ghi danh sách Top-20 vào <code>recs.sqlite</code> với vị trí số 1 là <em>Avengers</em>.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="color: #f43f5e;">Giai đoạn 2: Trưa nay lúc 14:00 (Tầng Speed Streaming xử lý)</div>
+        <p><strong>Tương tác phát sinh:</strong> An bất ngờ đổi gu, xem hết và chấm 5 sao cho phim tình cảm <em>The Notebook</em> ($q = [0.08, 0.92]$).</p>
+        <p><strong>Spark Streaming xử lý tức thời:</strong></p>
+        <ul>
+          <li>Cột <code>timestamp</code> kích hoạt sự kiện đẩy vào Kafka topic <code>user-ratings</code>.</li>
+          <li>Spark Streaming cập nhật nhanh <strong>Session Vector</strong> trong phiên của An vào Redis:
+            $$p_{\text{Session}} = 0.5 \times [0.95, 0.05] + 0.5 \times [0.08, 0.92] = [0.515, 0.485]$$
+          </li>
+          <li>Lưu vào Redis In-Memory với thời gian sống TTL = 30 phút.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="color: #34d399;">Giai đoạn 3: Lúc 14:01 (Tầng Serving Re-ranking)</div>
+        <p><strong>An tải lại trang web (F5):</strong></p>
+        <ul>
+          <li>FastAPI đọc danh sách Batch gốc trong SQLite.</li>
+          <li>FastAPI phát hiện An có $p_{\text{Session}}$ mới trong Redis và thực hiện <strong>Re-ranking</strong>:
+            Điểm phim <em>Titanic</em> tăng vọt từ 1.0 sao lên <strong>4.0 sao</strong> ($0.515 \times 0.05 + 0.485 \times 0.95 = 0.486$).
+          </li>
+          <li>Hệ thống lập tức đẩy các phim tình cảm lãng mạn lên đầu trang web cho An với độ trễ <strong>&lt; 20ms</strong> mà <strong>không cần đợi đến đêm để chạy lại Spark Batch</strong>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. BẢNG TỔNG KẾT ĐẶC TẢ -->
+  <section id="specs">
+    <h2>9. Bảng Tổng Kết Đặc Tả Kỹ Thuật và Định Hướng Bổ Sung</h2>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>Thành phần hệ thống</th>
+          <th>Phân hệ đã nghiên cứu & thử nghiệm</th>
+          <th>Định hướng mong muốn bổ sung</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Dữ liệu sử dụng</strong></td>
+          <td><code>ratings.csv</code>, <code>movies.csv</code></td>
+          <td>Tích hợp thêm <code>genome-scores.csv</code>, <code>genome-tags.csv</code>, <code>tags.csv</code>, <code>links.csv</code></td>
+        </tr>
+        <tr>
+          <td><strong>Tầng lưu trữ phân tán</strong></td>
+          <td>Parquet Data Lake (chuẩn hóa tệp 128 MB)</td>
+          <td>Cụm phân tán <strong>HDFS</strong> đa node (NameNode + DataNodes, Replication Factor = 3)</td>
+        </tr>
+        <tr>
+          <td><strong>Xử lý dòng sự kiện</strong></td>
+          <td>Đã thiết kế kiến trúc</td>
+          <td><strong>Kafka + Spark Streaming</strong> sử dụng cột <code>timestamp</code> làm Event Replay Stream</td>
+        </tr>
+        <tr>
+          <td><strong>Lưu trữ trạng thái dòng</strong></td>
+          <td>Đã thiết kế kiến trúc</td>
+          <td><strong>Redis In-Memory</strong> lưu Session Vector với thời gian sống (TTL = 30 phút)</td>
+        </tr>
+        <tr>
+          <td><strong>Mô hình gợi ý</strong></td>
+          <td>Collaborative Filtering (Spark MLlib ALS)</td>
+          <td><strong>Hybrid RecSys</strong>: ALS kết hợp Content-Based Filtering qua Genome Tags</td>
+        </tr>
+        <tr>
+          <td><strong>Tầng phục vụ API</strong></td>
+          <td>FastAPI + SQLite (index B-Tree) + NumPy</td>
+          <td>FastAPI Gateway hợp nhất Batch View + Speed State (Re-ranking tức thời)</td>
+        </tr>
+        <tr>
+          <td><strong>Độ trễ phục vụ</strong></td>
+          <td>Gợi ý: &lt; 1ms; Phim tương tự: 12-16ms</td>
+          <td>Re-ranking trực tuyến: &lt; 20ms</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    <p>© 2026 Báo Cáo Thiết Kế Kiến Trúc Big Data — Hệ Thống Gợi Ý Phim Phân Tán trên nền tảng Apache Spark & HDFS</p>
+    <p style="font-size: 0.8rem; margin-top: 5px;">Mã nguồn tham khảo: <code>src/jobs/</code> • <code>serving/</code> • <code>docker/</code></p>
+  </footer>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}MovieLens Big Data RecSys{% endblock %} | Lambda Architecture</title>
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            netflixRed: '#E50914',
+            netflixBlack: '#141414',
+            netflixDark: '#181818',
+            netflixCard: '#222222',
+            netflixGreen: '#46D369',
+            netflixGold: '#FFD700',
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-netflixBlack text-gray-200 min-h-screen flex flex-col font-sans">
+
+  <!-- NAVBAR CHUẨN NETFLIX -->
+  <nav class="sticky top-0 z-50 bg-black/90 backdrop-blur-md border-b border-zinc-800 px-6 py-4 transition-all">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <!-- Logo & Tiêu đề -->
+      <div class="flex items-center space-x-6">
+        <a href="/" class="flex items-center space-x-2">
+          <span class="text-netflixRed font-extrabold text-2xl tracking-wider uppercase drop-shadow">BIGDATA</span>
+          <span class="text-white font-semibold text-lg tracking-tight hidden sm:inline">| RecSys 32M</span>
+        </a>
+
+        <!-- 4 Tab điều hướng -->
+        <div class="hidden md:flex items-center space-x-1 pl-4 border-l border-zinc-800">
+          <a href="/" 
+             class="px-4 py-2 rounded-md font-medium text-sm transition-colors {% if active_tab == 'dashboard' %}bg-netflixRed text-white font-semibold shadow-md{% else %}text-zinc-400 hover:text-white hover:bg-zinc-900{% endif %}">
+            📊 Dashboard
+          </a>
+          <a href="/coldstart" 
+             class="px-4 py-2 rounded-md font-medium text-sm transition-colors {% if active_tab == 'coldstart' %}bg-netflixRed text-white font-semibold shadow-md{% else %}text-zinc-400 hover:text-white hover:bg-zinc-900{% endif %}">
+            ❄️ ColdStart
+          </a>
+          <a href="/admin" 
+             class="px-4 py-2 rounded-md font-medium text-sm transition-colors {% if active_tab == 'admin' %}bg-netflixRed text-white font-semibold shadow-md{% else %}text-zinc-400 hover:text-white hover:bg-zinc-900{% endif %}">
+            ⚙️ Vận Hành & Demo
+          </a>
+          <a href="/docs" target="_blank"
+             class="px-4 py-2 rounded-md font-medium text-sm text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors flex items-center space-x-1">
+            <span>📑 API Docs</span>
+            <svg class="w-3.5 h-3.5 inline-block opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- Trạng thái Cụm Big Data -->
+      <div class="flex items-center space-x-3 text-xs">
+        <div class="flex items-center space-x-2 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
+          <span class="pulse-indicator"></span>
+          <span class="text-zinc-300 font-medium">HDFS 3 DNs &bull; Spark 3.5 &bull; Kafka KRaft</span>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- NỘI DUNG CHÍNH (CONTENT) -->
+  <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- FOOTER HỆ THỐNG -->
+  <footer class="border-t border-zinc-800/80 bg-zinc-950 py-6 text-center text-xs text-zinc-500">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div>
+        Đề án Big Data Analytics (BDA501) &bull; Kiến trúc Lambda phân tán MovieLens-32M
+      </div>
+      <div class="flex items-center space-x-4">
+        <span>PostgreSQL 15</span>
+        <span>&bull;</span>
+        <span>Redis 7 In-Memory</span>
+        <span>&bull;</span>
+        <span>Delta Lake ACID</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container"></div>
+
+  <!-- JAVASCRIPT TIỆN ÍCH DÙNG CHUNG -->
+  <script>
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      
+      let icon = 'ℹ️';
+      if (type === 'success') icon = '✅';
+      if (type === 'error') icon = '❌';
+      if (type === 'warning') icon = '⚠️';
+
+      toast.innerHTML = `
+        <div class="flex items-center space-x-3">
+          <span class="text-xl">${icon}</span>
+          <span class="text-sm font-medium">${message}</span>
+        </div>
+        <button onclick="this.parentElement.remove()" class="text-zinc-400 hover:text-white text-sm ml-4 font-bold">&times;</button>
+      `;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease-out forwards';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Tương tác Click Movie để tăng điểm Online Preference
+    async function recordMovieClick(userId, movieId, title) {
+      try {
+        const res = await fetch('/api/click', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: parseInt(userId), movieId: parseInt(movieId), position: 1 })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`Đã chọn '${title}' (+2 điểm Trending cho User #${userId})`, 'success');
+        } else {
+          showToast('Lỗi kết nối Spark/Redis', 'error');
+        }
+      } catch (err) {
+        showToast('Lỗi kết nối Spark', 'error');
+      }
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

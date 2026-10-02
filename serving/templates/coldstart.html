@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Giải Quyết Cold-Start{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- TIÊU ĐỀ TRANG -->
+  <div class="pb-6 border-b border-zinc-800">
+    <h1 class="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+      <span>GIẢI QUYẾT BÀI TOÁN COLD-START</span>
+      <span class="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-semibold px-2.5 py-0.5 rounded uppercase">
+        Content-Based & Fallback
+      </span>
+    </h1>
+    <p class="text-sm text-zinc-400 mt-1">
+      Chiến lược giải quyết 2 bài toán khởi đầu lạnh kinh điển: Item Cold-Start (Phim mới) và User Cold-Start (Người dùng mới).
+    </p>
+  </div>
+
+  <!-- PHẦN 1: ITEM COLD-START (CONTENT-BASED QUA TAG GENOME) -->
+  <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 shadow-xl backdrop-blur-sm space-y-6">
+    <div class="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-zinc-800 gap-4">
+      <div>
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+          <span class="text-cyan-400">1.</span> ITEM COLD-START &bull; TÌM PHIM TƯƠNG ĐỒNG NỘI DUNG
+        </h2>
+        <p class="text-xs text-zinc-400">
+          Khi phim mới ra rạp chưa có đánh giá: Tính Cosine Similarity trên ma trận Tag Genome 1.128 chiều từ HDFS &bull; Lưu vào PostgreSQL.
+        </p>
+      </div>
+
+      <!-- FORM NHẬP MOVIE ID -->
+      <form id="item-form" class="flex items-center gap-2" onsubmit="loadItemColdStart(event)">
+        <div class="relative">
+          <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500 text-xs">Movie ID:</span>
+          <input type="number" id="movieIdInput" value="1" min="1" max="250000"
+                 class="bg-zinc-950 border border-zinc-700 rounded-lg pl-16 pr-3 py-1.5 text-sm text-white focus:outline-none focus:border-cyan-400 transition-colors w-36 font-semibold">
+        </div>
+        <button type="submit" 
+                class="bg-cyan-600 hover:bg-cyan-700 text-white font-medium text-sm px-4 py-1.5 rounded-lg transition-all shadow-md active:scale-95">
+          Tìm Phim Tương Tự
+        </button>
+      </form>
+    </div>
+
+    <!-- THÔNG TIN PHIM GỐC ĐANG TÌM KIẾM -->
+    <div id="target-movie-box" class="bg-zinc-950/80 border border-zinc-800 p-4 rounded-lg flex items-center justify-between">
+      <div class="flex items-center space-x-4">
+        <span class="text-2xl">🎬</span>
+        <div>
+          <span class="text-[11px] text-cyan-400 font-bold uppercase tracking-wider">Phim Mục Tiêu Đang Tra Cứu:</span>
+          <h3 id="target-title" class="text-base font-bold text-white">Đang tải...</h3>
+          <p id="target-genres" class="text-xs text-zinc-400"></p>
+        </div>
+      </div>
+      <div class="text-right">
+        <span class="text-xs text-zinc-500">Thuật toán:</span>
+        <div class="text-xs font-semibold text-zinc-300">Tag Genome Cosine Similarity</div>
+      </div>
+    </div>
+
+    <!-- GRID 20 PHIM TƯƠNG ĐỒNG NHẤT -->
+    <div>
+      <h4 class="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-4">Top 20 Phim Có Phong Cách & Thuộc Tính Tương Đồng Nhất:</h4>
+      <div id="similar-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+        <!-- Javascript sẽ đổ 20 phim tương đồng vào đây -->
+      </div>
+    </div>
+  </div>
+
+  <!-- PHẦN 2: USER COLD-START (FALLBACK TO TOP TRENDING) -->
+  <div class="bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 shadow-xl backdrop-blur-sm space-y-4">
+    <div class="flex items-center gap-2">
+      <span class="text-amber-400 text-xl font-bold">2.</span>
+      <h2 class="text-xl font-bold text-white">USER COLD-START &bull; CƠ CHẾ DỰ PHÒNG TỰ ĐỘNG (FALLBACK)</h2>
+    </div>
+
+    <div class="bg-amber-500/10 border border-amber-500/30 p-4 rounded-lg text-sm text-amber-200/90 leading-relaxed">
+      <p>
+        <strong>Nguyên lý vận hành:</strong> Khi một người dùng mới (chưa có bất kỳ đánh giá nào trong tập dữ liệu lịch sử) đăng nhập vào hệ thống, mô hình Spark MLlib ALS không thể tính toán vector thuộc tính ẩn cho người dùng này. 
+        Thay vì trả về màn hình trống hoặc báo lỗi 404, tầng Serving của hệ thống được lập trình để <strong>tự động kích hoạt cơ chế Fallback sang bảng Top 20 Phim Thịnh Hành (Trending) thời gian thực từ Redis</strong>.
+      </p>
+    </div>
+
+    <div class="flex items-center justify-between pt-2">
+      <div class="text-xs text-zinc-400">
+        Kiểm thử ngay cơ chế phản hồi cho một UserID hoàn toàn mới chưa từng xuất hiện trong tập Train.
+      </div>
+      <a href="/user/99999" 
+         class="bg-amber-500 hover:bg-amber-600 text-black font-bold text-sm px-5 py-2.5 rounded-lg transition-all shadow-lg flex items-center gap-2 active:scale-95">
+        <span>🚀 Test với UserID = 99999</span>
+      </a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentMovieId = 1;
+
+  async function fetchSimilarMovies(movieId) {
+    const grid = document.getElementById('similar-grid');
+    const targetTitle = document.getElementById('target-title');
+    const targetGenres = document.getElementById('target-genres');
+
+    grid.innerHTML = Array(20).fill(`
+      <div class="skeleton aspect-[2/3] rounded-lg"></div>
+    `).join('');
+
+    try {
+      const res = await fetch(`/api/users/1/coldstart/${movieId}`);
+      if (!res.ok) throw new Error('Không thể tải phim tương tự');
+      const data = await res.json();
+
+      targetTitle.textContent = `${data.target_movie.title} (ID: ${data.target_movie.movie_id})`;
+      targetGenres.textContent = `Thể loại: ${data.target_movie.genres}`;
+
+      grid.innerHTML = data.similar_movies.map(item => `
+        <div class="movie-card rounded-lg overflow-hidden border border-zinc-800/80 group cursor-pointer shadow-lg"
+             onclick="recordMovieClick(1, ${item.movie_id}, '${item.title.replace(/'/g, "\\'")}')">
+          <div class="relative aspect-[2/3] overflow-hidden bg-zinc-950">
+            <img src="${item.poster_url}" alt="${item.title}" loading="lazy"
+                 class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+            <div class="absolute top-2 left-2 bg-cyan-950/90 border border-cyan-500/50 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-cyan-300">
+              Độ tương đồng: ${(item.similarity_score * 100).toFixed(1)}%
+            </div>
+            <div class="absolute top-2 right-2 bg-netflixRed/90 px-1.5 py-0.5 rounded text-[10px] font-extrabold text-white">
+              #${item.rank}
+            </div>
+          </div>
+          <div class="p-2.5 bg-zinc-900/90">
+            <h3 class="text-xs font-bold text-white truncate" title="${item.title}">${item.title}</h3>
+            <p class="text-[10px] text-zinc-400 truncate mt-0.5">${item.genres}</p>
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      showToast('Lỗi kết nối Spark', 'error');
+    }
+  }
+
+  function loadItemColdStart(e) {
+    if (e) e.preventDefault();
+    const inputVal = document.getElementById('movieIdInput').value;
+    currentMovieId = parseInt(inputVal) || 1;
+    fetchSimilarMovies(currentMovieId);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    fetchSimilarMovies(currentMovieId);
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Bảng Điều Khiển Big Data{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- TIÊU ĐỀ TRANG -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-zinc-800 gap-4">
+    <div>
+      <h1 class="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+        <span>BẢNG ĐIỀU KHIỂN BIGDATA</span>
+        <span class="text-xs bg-netflixRed/20 text-netflixRed border border-netflixRed/40 font-semibold px-2.5 py-0.5 rounded uppercase">
+          Lambda Architecture
+        </span>
+      </h1>
+      <p class="text-sm text-zinc-400 mt-1">
+        Kết hợp Luồng Khối (Spark Batch ALS trên HDFS) & Luồng Tốc Độ (Spark Structured Streaming trên Kafka & Redis)
+      </p>
+    </div>
+  </div>
+
+  <!-- BỐ CỤC 2 CỘT: BATCH VS STREAM -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+    <!-- CỘT 1: GỢI Ý CÁ NHÂN - BATCH LAYER (8 CỘT) -->
+    <div class="lg:col-span-8 bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 shadow-xl backdrop-blur-sm">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800/80 mb-6">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center gap-2">
+            <span class="text-netflixRed">1.</span> GỢI Ý CÁ NHÂN HÓA &bull; BATCH LAYER
+          </h2>
+          <p class="text-xs text-zinc-400">Spark MLlib ALS huấn luyện trên 32M đánh giá &bull; Xuất kết quả vào PostgreSQL</p>
+        </div>
+
+        <!-- Ô NHẬP USER ID & NÚT XEM -->
+        <form id="user-form" class="flex items-center gap-2" onsubmit="loadRecommendations(event)">
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500 text-xs">User:</span>
+            <input type="number" id="userIdInput" value="{{ current_user_id }}" min="1" max="250000"
+                   class="bg-zinc-950 border border-zinc-700 rounded-lg pl-12 pr-3 py-1.5 text-sm text-white focus:outline-none focus:border-netflixRed transition-colors w-32 font-semibold">
+          </div>
+          <button type="submit" 
+                  class="bg-netflixRed hover:bg-red-700 text-white font-medium text-sm px-4 py-1.5 rounded-lg transition-all shadow-md active:scale-95">
+            Xem
+          </button>
+        </form>
+      </div>
+
+      <!-- BANNER CẢNH BÁO FALLBACK CHO USER MỚI (COLD-START) -->
+      <div id="fallback-banner" class="hidden mb-6 bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs font-medium px-4 py-3 rounded-lg flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-base">⚠️</span>
+          <span><strong>User mới (Cold-Start):</strong> Người dùng chưa có trong tập huấn luyện Batch ALS &rarr; Hệ thống tự động kích hoạt <strong>Fallback sang Top Trending từ Redis</strong>!</span>
+        </div>
+        <span class="bg-amber-400/20 text-amber-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Fallback Active</span>
+      </div>
+
+      <!-- GRID 5x4 POSTERS (20 BỘ PHIM) -->
+      <div id="recs-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+        <!-- Javascript sẽ đổ 20 movie card vào đây -->
+      </div>
+    </div>
+
+    <!-- CỘT 2: TOP 20 TRENDING - SPEED LAYER (4 CỘT) -->
+    <div class="lg:col-span-4 bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 shadow-xl backdrop-blur-sm sticky top-24">
+      <div class="flex items-center justify-between pb-4 border-b border-zinc-800/80 mb-4">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <span class="text-netflixGreen">2.</span> TOP 20 TRENDING &bull; SPEED LAYER
+          </h2>
+          <p class="text-xs text-zinc-400">Sliding Window 1h trượt 10m &bull; Redis In-Memory</p>
+        </div>
+        <div class="flex items-center gap-1.5 bg-zinc-950 px-2.5 py-1 rounded-full border border-zinc-800">
+          <span class="pulse-indicator bg-netflixGreen" style="box-shadow: 0 0 0 0 rgba(70, 211, 105, 0.7);"></span>
+          <span class="text-[10px] font-bold text-zinc-300">LIVE (5s)</span>
+        </div>
+      </div>
+
+      <!-- DANH SÁCH BẢNG XẾP HẠNG TOP 20 TRENDING -->
+      <div id="trending-list" class="space-y-2.5 max-h-[700px] overflow-y-auto pr-1">
+        <!-- Javascript sẽ đổ 20 bảng xếp hạng vào đây -->
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentUserId = {{ current_user_id }};
+
+  // Nạp gợi ý cá nhân hóa từ API
+  async function fetchRecommendations(userId) {
+    const grid = document.getElementById('recs-grid');
+    const banner = document.getElementById('fallback-banner');
+    grid.innerHTML = Array(20).fill(`
+      <div class="skeleton aspect-[2/3] rounded-lg"></div>
+    `).join('');
+
+    try {
+      const res = await fetch(`/api/users/${userId}/recommendations`);
+      if (!res.ok) throw new Error('Không thể tải gợi ý');
+      const data = await res.json();
+
+      if (data.is_fallback) {
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+
+      grid.innerHTML = data.recommendations.map(item => `
+        <div class="movie-card rounded-lg overflow-hidden border border-zinc-800/80 group cursor-pointer shadow-lg"
+             onclick="recordMovieClick(${userId}, ${item.movie_id}, '${item.title.replace(/'/g, "\\'")}')">
+          <div class="relative aspect-[2/3] overflow-hidden bg-zinc-950">
+            <img src="${item.poster_url}" alt="${item.title}" loading="lazy"
+                 class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+            <div class="absolute top-2 left-2 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-netflixGold">
+              ★ ${item.predicted_rating}
+            </div>
+            <div class="absolute top-2 right-2 bg-netflixRed/90 px-1.5 py-0.5 rounded text-[10px] font-extrabold text-white">
+              #${item.rank}
+            </div>
+          </div>
+          <div class="p-2.5 bg-zinc-900/90">
+            <h3 class="text-xs font-bold text-white truncate" title="${item.title}">${item.title}</h3>
+            <p class="text-[10px] text-zinc-400 truncate mt-0.5">${item.genres}</p>
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      showToast('Lỗi kết nối Spark', 'error');
+    }
+  }
+
+  // Nạp danh sách Top 20 Trending từ API
+  async function fetchTrending() {
+    const list = document.getElementById('trending-list');
+    try {
+      const res = await fetch('/api/trending');
+      if (!res.ok) throw new Error('Không thể tải trending');
+      const data = await res.json();
+
+      list.innerHTML = data.trending.map(item => {
+        let rankBadge = `<span class="text-xs font-bold text-zinc-400">#${item.rank}</span>`;
+        if (item.rank === 1) rankBadge = `<span class="text-base" title="Hạng 1">🥇</span>`;
+        if (item.rank === 2) rankBadge = `<span class="text-base" title="Hạng 2">🥈</span>`;
+        if (item.rank === 3) rankBadge = `<span class="text-base" title="Hạng 3">🥉</span>`;
+
+        return `
+          <div class="flex items-center justify-between p-2 rounded-lg bg-zinc-950/70 border border-zinc-800/60 hover:border-zinc-700 transition-colors group cursor-pointer"
+               onclick="recordMovieClick(${currentUserId}, ${item.movie_id}, '${item.title.replace(/'/g, "\\'")}')">
+            <div class="flex items-center space-x-3 overflow-hidden">
+              <div class="w-6 text-center shrink-0">${rankBadge}</div>
+              <img src="${item.poster_url}" alt="${item.title}" loading="lazy" class="w-8 h-12 object-cover rounded shadow shrink-0">
+              <div class="truncate">
+                <h4 class="text-xs font-semibold text-white group-hover:text-netflixRed transition-colors truncate" title="${item.title}">
+                  ${item.title}
+                </h4>
+                <p class="text-[10px] text-zinc-400 truncate">${item.genres}</p>
+              </div>
+            </div>
+            <div class="shrink-0 pl-2 text-right">
+              <span class="inline-block bg-netflixGreen/10 text-netflixGreen border border-netflixGreen/30 text-[10px] font-bold px-2 py-0.5 rounded">
+                ${item.interaction_count} hits
+              </span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      console.warn('Lỗi kết nối Redis Trending');
+    }
+  }
+
+  function loadRecommendations(e) {
+    if (e) e.preventDefault();
+    const inputVal = document.getElementById('userIdInput').value;
+    currentUserId = parseInt(inputVal) || 1;
+    fetchRecommendations(currentUserId);
+  }
+
+  // Khởi chạy khi load trang
+  document.addEventListener('DOMContentLoaded', () => {
+    fetchRecommendations(currentUserId);
+    fetchTrending();
+    // Tự động F5 Trending mỗi 5s
+    setInterval(fetchTrending, 5000);
+  });
+</script>
+{% endblock %}
