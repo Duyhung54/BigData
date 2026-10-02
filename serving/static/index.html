@@ -41,12 +41,35 @@
   <h1>Gợi ý phim — MovieLens ALS</h1>
   <div class="stats" id="stats">Đang tải…</div>
 
+  <div class="panel" style="background:#eaf1ec; border-color:var(--accent);">
+    <h2 style="color:var(--accent); margin-bottom:8px;">Gửi đánh giá thời gian thực (Streaming)</h2>
+    <form id="rateForm" class="controls" style="margin-bottom:0">
+      <input id="rateUserId" type="number" min="1" placeholder="User ID" required>
+      <input id="rateMovieId" type="number" min="1" placeholder="Movie ID" required>
+      <input id="rateScore" type="number" step="0.5" min="0.5" max="5.0" placeholder="Điểm (1-5)" required>
+      <button type="submit">Gửi vào Kafka</button>
+      <span id="rateLog" style="font-size:13px; color:var(--muted); margin-left:10px;"></span>
+    </form>
+  </div>
+
   <div class="controls">
     <input id="userId" type="number" min="1" value="1" placeholder="userId">
     <button onclick="loadUser()">Xem gợi ý</button>
+    <button onclick="toggleChart('chartPanel')" style="background:#4b5563; border-color:#4b5563;">📊 Phân tích xu hướng</button>
+    <button onclick="toggleChart('evalChartPanel')" style="background:#b91c1c; border-color:#b91c1c;">🎯 Thực tế vs Dự đoán</button>
     <input id="q" class="search-input" placeholder="Tìm phim…" oninput="doSearch(this.value)">
   </div>
   <div class="suggested" id="suggested"></div>
+
+  <div class="panel" id="chartPanel" style="display:none; text-align:center;">
+    <h2 style="margin-bottom: 10px;">Phân tích Xu hướng Người dùng</h2>
+    <img id="trendChartImg" src="/static/user_trend.png" style="max-width:100%; border-radius:8px; border:1px solid var(--line);">
+  </div>
+
+  <div class="panel" id="evalChartPanel" style="display:none; text-align:center;">
+    <h2 style="margin-bottom: 10px;">Đánh giá: Rating Thực tế vs Dự đoán</h2>
+    <img id="evalChartImg" src="/static/actual_vs_predicted.png" style="max-width:100%; border-radius:8px; border:1px solid var(--line);">
+  </div>
 
   <div class="panel" id="searchPanel" style="display:none">
     <h2>Kết quả tìm kiếm</h2>
@@ -212,6 +235,12 @@ async function loadUser() {
 }
 
 async function loadSimilar(movieId) {
+  // Tự động điền User ID và Movie ID vào form đánh giá khi bấm vào một phim
+  $('rateMovieId').value = movieId;
+  if ($('userId').value) {
+    $('rateUserId').value = $('userId').value;
+  }
+  
   try {
     const data = await getJSON(`/api/movies/${movieId}/similar?k=10`);
     renderMovies($('similar'), data.items, 'similarity', loadSimilar);
@@ -245,6 +274,45 @@ getJSON('/api/stats').then(s => {
 }).catch(e => { $('stats').className = 'stats error'; $('stats').textContent = friendlyMessage(e); });
 
 loadUser();
+
+$('rateForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const userId = $('rateUserId').value;
+  const movieId = $('rateMovieId').value;
+  const rating = $('rateScore').value;
+  const logEl = $('rateLog');
+
+  logEl.textContent = "Đang gửi...";
+  try {
+    const res = await fetch('/api/rate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: parseInt(userId), movieId: parseInt(movieId), rating: parseFloat(rating) })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      logEl.textContent = "✅ Đã gửi rating. Hãy đợi model tự động chạy ngầm, sau đó tải lại gợi ý.";
+      // Tự động điền user ID xuống mục xem gợi ý để tiện theo dõi
+      $('userId').value = userId;
+    } else {
+      logEl.textContent = "❌ Lỗi: " + JSON.stringify(data);
+    }
+  } catch (err) {
+    logEl.textContent = "❌ Lỗi kết nối: " + err.message;
+  }
+});
+
+function toggleChart(panelId) {
+  const p = $(panelId);
+  if (p.style.display === 'none') {
+    p.style.display = 'block';
+    // Ép tải lại ảnh để tránh cache
+    const img = p.querySelector('img');
+    if (img) img.src = img.src.split('?')[0] + '?t=' + new Date().getTime();
+  } else {
+    p.style.display = 'none';
+  }
+}
 </script>
 </body>
 </html>

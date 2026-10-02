@@ -18,6 +18,29 @@ from typing import Optional
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+import sqlite3
+import json
+import time
+
+from pydantic import BaseModel
+from kafka import KafkaProducer
+
+class RatingEvent(BaseModel):
+    userId: int
+    movieId: int
+    rating: float
+
+_producer = None
+
+def get_kafka_producer():
+    global _producer
+    if _producer is None:
+        _producer = KafkaProducer(
+            bootstrap_servers=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+            value_serializer=lambda v: json.dumps(v).encode('utf-8')
+        )
+    return _producer
 
 from serving.store import Store
 
@@ -30,30 +53,70 @@ STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="MovieLens ALS Recommender")
 
 _store: Optional[Store] = None
+MODEL_PATH = Path("/opt/app/data/output/model/recs.sqlite")
+_last_mtime = 0
+_connection: sqlite3.Connection | None = None
+def get_connection() -> sqlite3.Connection:
+    global _connection, _last_mtime
+    mtime = MODEL_PATH.stat().st_mtime
+    if _connection is None or mtime != _last_mtime:
+        if _connection:
+            _connection.close()
+        _connection = sqlite3.connect(str(MODEL_PATH))
+        _last_mtime = mtime
+        print(f"[API] Reloaded model (mtime={mtime})")
+    return _connection
+@app.get("/recommendations/{user_id}")
+def recommend(user_id: int, k: int = 10):
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT movieId, rating FROM recommendations WHERE userId=? ORDER BY rating DESC LIMIT ?",
+        (user_id, k)
+    )
+    rows = cur.fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="User not found or no recommendations yet")
+    return [{"movieId": r[0], "score": r[1]} for r in rows]
 
+_last_store_mtime = 0
 
 def get_store() -> Store:
     """Trả về Store đã nạp, nạp lần đầu khi được gọi (không nạp lúc import).
-
-    Raise 503 nếu file batch chưa sinh ra thay vì để lỗi mở file rò rỉ thành
-    500 khó hiểu.
+    
+    Tự động nạp lại (hot-reload) Store nếu file recs.sqlite có thời gian chỉnh sửa mới 
+    hơn lần nạp trước (do job streaming vừa chạy xong).
     """
-    global _store
-    if _store is None:
-        missing = [
-            str(p) for p in (RECS_SQLITE, ITEM_FACTORS_NPY, ITEM_INDEX_PARQUET) if not p.exists()
-        ]
-        if missing:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Dữ liệu gợi ý chưa sẵn sàng, còn thiếu: "
-                    + ", ".join(missing)
-                    + ". Hãy chạy pipeline batch (ingest -> train_als -> evaluate -> export_recs) trước."
-                ),
-            )
+    global _store, _last_store_mtime
+    
+    missing = [str(p) for p in (RECS_SQLITE, ITEM_FACTORS_NPY, ITEM_INDEX_PARQUET) if not p.exists()]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Dữ liệu gợi ý chưa sẵn sàng, còn thiếu: "
+                + ", ".join(missing)
+                + ". Hãy chạy pipeline batch trước."
+            ),
+        )
+        
+    current_mtime = RECS_SQLITE.stat().st_mtime
+    if _store is None or current_mtime != _last_store_mtime:
         _store = Store(RECS_SQLITE, ITEM_FACTORS_NPY, ITEM_INDEX_PARQUET)
+        _last_store_mtime = current_mtime
+        print(f"[API] Reloaded Store (mtime={current_mtime})")
+
     return _store
+
+
+@app.post("/api/rate")
+def submit_rating(event: RatingEvent):
+    producer = get_kafka_producer()
+    rating_dict = event.dict()
+    rating_dict["timestamp"] = int(time.time())
+    producer.send("ratings", rating_dict)
+    producer.flush()
+    return {"status": "success", "event": rating_dict}
 
 
 @app.get("/health")

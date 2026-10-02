@@ -25,7 +25,12 @@ def read_movies_csv(spark: SparkSession, path: str) -> DataFrame:
     return spark.read.csv(path, header=True, schema=MOVIES_SCHEMA, escape='"')
 
 
-def _dir_bytes(path: Path) -> int:
+def _dir_bytes(path) -> int:
+    if isinstance(path, str) and path.startswith("hdfs://"):
+        return 0  # HDFS bytes checking skipped for demo
+    path = Path(str(path))
+    if not path.exists():
+        return 0
     if path.is_file():
         return path.stat().st_size
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
